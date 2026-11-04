@@ -52,6 +52,16 @@ describe("ServiceAgreement", function () {
     await expect(contract.getAgreement(42)).to.be.revertedWithCustomError(contract, "AgreementNotFound");
   });
 
+  it("refuse l'adresse zero comme freelance", async function () {
+    await expect(
+      contract.createAgreement(ethers.ZeroAddress, "x", termsHash, 1, deadline)
+    ).to.be.revertedWithCustomError(contract, "InvalidParameters");
+  });
+
+  it("refuse l'identifiant 0", async function () {
+    await expect(contract.getAgreement(0)).to.be.revertedWithCustomError(contract, "AgreementNotFound");
+  });
+
   it("definit l'arbitre comme le deployeur", async function () {
     expect(await contract.arbiter()).to.equal(client.address);
   });
@@ -205,6 +215,79 @@ describe("ServiceAgreement", function () {
       await createAcceptStartAndDeliver(); // Delivered : le client doit valider ou contester
       await time.increaseTo(deadline + 1);
       await expect(contract.connect(client).cancelOverdue(1))
+        .to.be.revertedWithCustomError(contract, "InvalidStatus");
+    });
+  });
+
+  describe("raiseDispute", function () {
+    it("le client ouvre un litige pendant le travail", async function () {
+      await createAcceptAndStart();
+      await expect(contract.connect(client).raiseDispute(1))
+        .to.emit(contract, "StatusChanged").withArgs(1, 2, 6); // InProgress -> Disputed
+      expect((await contract.getAgreement(1)).status).to.equal(6n);
+    });
+
+    it("le freelance ouvre un litige apres la livraison", async function () {
+      await createAcceptStartAndDeliver();
+      await expect(contract.connect(freelancer).raiseDispute(1))
+        .to.emit(contract, "StatusChanged").withArgs(1, 3, 6); // Delivered -> Disputed
+    });
+
+    it("refuse un tiers", async function () {
+      await createAcceptAndStart();
+      await expect(contract.connect(stranger).raiseDispute(1))
+        .to.be.revertedWithCustomError(contract, "NotParty");
+    });
+
+    it("refuse avant le debut du travail", async function () {
+      await create(); // Created
+      await expect(contract.connect(client).raiseDispute(1))
+        .to.be.revertedWithCustomError(contract, "InvalidStatus");
+    });
+
+    it("refuse apres la validation", async function () {
+      await createAcceptStartAndDeliver();
+      await contract.connect(client).approveDelivery(1); // Completed
+      await expect(contract.connect(freelancer).raiseDispute(1))
+        .to.be.revertedWithCustomError(contract, "InvalidStatus");
+    });
+  });
+
+  describe("resolveDispute", function () {
+    let arbiter;
+
+    beforeEach(async function () {
+      // L'arbitre est celui qui deploie : on redeploie avec un compte distinct des parties
+      [, , , arbiter] = await ethers.getSigners();
+      contract = await ethers.deployContract("ServiceAgreement", [], arbiter);
+      await createAcceptAndStart();
+      await contract.connect(client).raiseDispute(1);
+    });
+
+    it("l'arbitre tranche en faveur du freelance : Completed", async function () {
+      await expect(contract.connect(arbiter).resolveDispute(1, true))
+        .to.emit(contract, "StatusChanged").withArgs(1, 6, 4); // Disputed -> Completed
+      expect((await contract.getAgreement(1)).status).to.equal(4n);
+    });
+
+    it("l'arbitre tranche en faveur du client : Cancelled", async function () {
+      await expect(contract.connect(arbiter).resolveDispute(1, false))
+        .to.emit(contract, "StatusChanged").withArgs(1, 6, 5); // Disputed -> Cancelled
+      expect((await contract.getAgreement(1)).status).to.equal(5n);
+    });
+
+    it("refuse les parties et les tiers", async function () {
+      await expect(contract.connect(client).resolveDispute(1, false))
+        .to.be.revertedWithCustomError(contract, "NotArbiter");
+      await expect(contract.connect(freelancer).resolveDispute(1, true))
+        .to.be.revertedWithCustomError(contract, "NotArbiter");
+      await expect(contract.connect(stranger).resolveDispute(1, true))
+        .to.be.revertedWithCustomError(contract, "NotArbiter");
+    });
+
+    it("refuse si l'accord n'est pas en litige", async function () {
+      await contract.connect(arbiter).resolveDispute(1, true); // deja tranche
+      await expect(contract.connect(arbiter).resolveDispute(1, false))
         .to.be.revertedWithCustomError(contract, "InvalidStatus");
     });
   });

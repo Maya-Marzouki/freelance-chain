@@ -26,6 +26,7 @@ contract ServiceAgreement is IServiceAgreement {
     error InvalidParameters();
     error NotArbiter();
     error DeadlineNotPassed();
+    error NotParty();
 
     constructor() {
         arbiter = msg.sender;
@@ -107,6 +108,30 @@ contract ServiceAgreement is IServiceAgreement {
         if (block.timestamp <= a.deadline) revert DeadlineNotPassed();
 
         _transition(id, a, a.status, Status.Cancelled);
+    }
+
+    /// @notice Le client ou le freelance contestent l'accord pendant ou apres le travail.
+    function raiseDispute(uint256 id) external {
+        Agreement storage a = _get(id);
+        if (msg.sender != a.client && msg.sender != a.freelancer) revert NotParty();
+        if (a.status != Status.InProgress && a.status != Status.Delivered) {
+            revert InvalidStatus(a.status);
+        }
+
+        _transition(id, a, a.status, Status.Disputed);
+    }
+
+    /// @notice L'arbitre tranche : Completed (le freelance est paye) ou Cancelled (le client est rembourse).
+    function resolveDispute(uint256 id, bool favorFreelancer) external {
+        Agreement storage a = _get(id);
+        if (msg.sender != arbiter) revert NotArbiter();
+
+        _transition(
+            id,
+            a,
+            Status.Disputed,
+            favorFreelancer ? Status.Completed : Status.Cancelled
+        );
     }
 
     function getAgreement(uint256 id) external view override returns (Agreement memory) {
