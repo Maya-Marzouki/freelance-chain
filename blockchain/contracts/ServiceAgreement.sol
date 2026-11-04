@@ -1,33 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import "./IServiceAgreement.sol";
+
 /// @title ServiceAgreement
 /// @notice Contrat A : accord de prestation entre un client et un freelance.
 /// @dev Socle minimal (creation + acceptation). A completer : livraison,
 ///      validation, annulation, litige, paiement (voir docs/ARCHITECTURE.md).
-contract ServiceAgreement {
-    enum Status {
-        Created,
-        Accepted,
-        InProgress,
-        Delivered,
-        Completed,
-        Cancelled,
-        Disputed
-    }
-
-    struct Agreement {
-        uint256 id;
-        address client;
-        address freelancer;
-        string title;
-        bytes32 termsHash; // hash du texte complet du contrat (stocke hors chaine)
-        uint256 amount;
-        uint256 deadline;
-        Status status;
-    }
-
+contract ServiceAgreement is IServiceAgreement {
     uint256 public agreementCount;
+    address public arbiter;
     mapping(uint256 => Agreement) private agreements;
 
     event AgreementCreated(
@@ -37,10 +19,18 @@ contract ServiceAgreement {
     );
     event StatusChanged(uint256 indexed id, Status oldStatus, Status newStatus);
 
+    error NotClient();
     error NotFreelancer();
     error InvalidStatus(Status current);
     error AgreementNotFound();
     error InvalidParameters();
+    error NotArbiter();
+    error DeadlineNotPassed();
+    error NotParty();
+
+    constructor() {
+        arbiter = msg.sender;
+    }
 
     function createAgreement(
         address freelancer,
@@ -72,18 +62,95 @@ contract ServiceAgreement {
     function acceptAgreement(uint256 id) external {
         Agreement storage a = _get(id);
         if (msg.sender != a.freelancer) revert NotFreelancer();
-        if (a.status != Status.Created) revert InvalidStatus(a.status);
 
-        a.status = Status.Accepted;
-        emit StatusChanged(id, Status.Created, Status.Accepted);
+        _transition(id, a, Status.Created, Status.Accepted);
     }
 
-    function getAgreement(uint256 id) external view returns (Agreement memory) {
+    function startWork(uint256 id) external {
+        Agreement storage a = _get(id);
+        if (msg.sender != a.freelancer) revert NotFreelancer();
+
+        _transition(id, a, Status.Accepted, Status.InProgress);
+    }
+
+    function markDelivered(uint256 id) external {
+        Agreement storage a = _get(id);
+        if (msg.sender != a.freelancer) revert NotFreelancer();
+
+        _transition(id, a, Status.InProgress, Status.Delivered);
+    }
+
+    function approveDelivery(uint256 id) external {
+        Agreement storage a = _get(id);
+        if (msg.sender != a.client) revert NotClient();
+
+        _transition(id, a, Status.Delivered, Status.Completed);
+    }
+
+    /// @notice Annulation libre par le client, tant que le travail n'a pas commence.
+    function cancel(uint256 id) external {
+        Agreement storage a = _get(id);
+        if (msg.sender != a.client) revert NotClient();
+        if (a.status != Status.Created && a.status != Status.Accepted) {
+            revert InvalidStatus(a.status);
+        }
+
+        _transition(id, a, a.status, Status.Cancelled);
+    }
+
+    /// @notice Annulation par le client apres l'echeance, si rien n'a ete livre.
+    function cancelOverdue(uint256 id) external {
+        Agreement storage a = _get(id);
+        if (msg.sender != a.client) revert NotClient();
+        if (a.status != Status.Accepted && a.status != Status.InProgress) {
+            revert InvalidStatus(a.status);
+        }
+        if (block.timestamp <= a.deadline) revert DeadlineNotPassed();
+
+        _transition(id, a, a.status, Status.Cancelled);
+    }
+
+    /// @notice Le client ou le freelance contestent l'accord pendant ou apres le travail.
+    function raiseDispute(uint256 id) external {
+        Agreement storage a = _get(id);
+        if (msg.sender != a.client && msg.sender != a.freelancer) revert NotParty();
+        if (a.status != Status.InProgress && a.status != Status.Delivered) {
+            revert InvalidStatus(a.status);
+        }
+
+        _transition(id, a, a.status, Status.Disputed);
+    }
+
+    /// @notice L'arbitre tranche : Completed (le freelance est paye) ou Cancelled (le client est rembourse).
+    function resolveDispute(uint256 id, bool favorFreelancer) external {
+        Agreement storage a = _get(id);
+        if (msg.sender != arbiter) revert NotArbiter();
+
+        _transition(
+            id,
+            a,
+            Status.Disputed,
+            favorFreelancer ? Status.Completed : Status.Cancelled
+        );
+    }
+
+    function getAgreement(uint256 id) external view override returns (Agreement memory) {
         return _get(id);
+    }
+
+    /// @dev Verifie le statut courant, applique le nouveau statut et emet l'evenement.
+    ///      Le controle de l'appelant reste dans chaque fonction publique.
+    function _transition(uint256 id, Agreement storage a, Status expected, Status next) internal {
+        if (a.status != expected) revert InvalidStatus(a.status);
+
+        a.status = next;
+        emit StatusChanged(id, expected, next);
     }
 
     function _get(uint256 id) internal view returns (Agreement storage) {
         if (id == 0 || id > agreementCount) revert AgreementNotFound();
         return agreements[id];
     }
+
+    
 }

@@ -1,0 +1,14 @@
+{
+  "name": "freelance-chain",
+  "version": "0.1.0",
+  "private": true,
+  "description": "FreeLance Chain : contrats numeriques freelance-client sur blockchain",
+  "scripts": {
+    "test": "npm --prefix blockchain test",
+    "coverage": "npm --prefix blockchain run coverage",
+    "node": "npm --prefix blockchain run node",
+    "deploy:local": "npm --prefix blockchain run deploy:local",
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build"
+  }
+}
