@@ -56,4 +56,32 @@ describe("ServiceAgreement", function () {
     expect(await contract.arbiter()).to.equal(client.address);
   });
 
+  async function createAndAccept() {
+    await create();
+    await contract.connect(freelancer).acceptAgreement(1);
+  }
+  
+  describe("startWork", function () {
+  it("le freelance demarre le travail", async function () {
+    await createAndAccept();
+    await expect(contract.connect(freelancer).startWork(1))
+      .to.emit(contract, "StatusChanged")
+      .withArgs(1, 1, 2); // Accepted (1) -> InProgress (2)
+    expect((await contract.getAgreement(1)).status).to.equal(2n);
+  });
+
+  it("refuse un appelant autre que le freelance", async function () {
+    await createAndAccept();
+    await expect(contract.connect(client).startWork(1))
+      .to.be.revertedWithCustomError(contract, "NotFreelancer");
+    await expect(contract.connect(stranger).startWork(1))
+      .to.be.revertedWithCustomError(contract, "NotFreelancer");
+  });
+
+  it("refuse si l'accord n'est pas Accepted", async function () {
+    await create(); // statut Created : pas encore accepte
+    await expect(contract.connect(freelancer).startWork(1))
+      .to.be.revertedWithCustomError(contract, "InvalidStatus");
+  });
+  });
 });

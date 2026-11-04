@@ -65,6 +65,15 @@ contract ServiceAgreement is IServiceAgreement {
         emit StatusChanged(id, Status.Created, Status.Accepted);
     }
 
+    function startWork(uint256 id) external {
+        Agreement storage a = _get(id);
+        if (msg.sender != a.freelancer) revert NotFreelancer();
+        if (a.status != Status.Accepted) revert InvalidStatus(a.status);
+
+        a.status = Status.InProgress;
+        emit StatusChanged(id, Status.Accepted, Status.InProgress);
+    }
+
     function getAgreement(uint256 id) external view override returns (Agreement memory) {
         return _get(id);
     }
@@ -73,4 +82,6 @@ contract ServiceAgreement is IServiceAgreement {
         if (id == 0 || id > agreementCount) revert AgreementNotFound();
         return agreements[id];
     }
+
+    
 }
