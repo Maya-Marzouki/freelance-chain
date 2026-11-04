@@ -1,33 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import "./IServiceAgreement.sol";
+
 /// @title ServiceAgreement
 /// @notice Contrat A : accord de prestation entre un client et un freelance.
 /// @dev Socle minimal (creation + acceptation). A completer : livraison,
 ///      validation, annulation, litige, paiement (voir docs/ARCHITECTURE.md).
-contract ServiceAgreement {
-    enum Status {
-        Created,
-        Accepted,
-        InProgress,
-        Delivered,
-        Completed,
-        Cancelled,
-        Disputed
-    }
-
-    struct Agreement {
-        uint256 id;
-        address client;
-        address freelancer;
-        string title;
-        bytes32 termsHash; // hash du texte complet du contrat (stocke hors chaine)
-        uint256 amount;
-        uint256 deadline;
-        Status status;
-    }
-
+contract ServiceAgreement is IServiceAgreement {
     uint256 public agreementCount;
+    address public arbiter;
     mapping(uint256 => Agreement) private agreements;
 
     event AgreementCreated(
@@ -41,6 +23,11 @@ contract ServiceAgreement {
     error InvalidStatus(Status current);
     error AgreementNotFound();
     error InvalidParameters();
+    error NotArbiter();
+
+    constructor() {
+        arbiter = msg.sender;
+    }
 
     function createAgreement(
         address freelancer,
@@ -78,7 +65,7 @@ contract ServiceAgreement {
         emit StatusChanged(id, Status.Created, Status.Accepted);
     }
 
-    function getAgreement(uint256 id) external view returns (Agreement memory) {
+    function getAgreement(uint256 id) external view override returns (Agreement memory) {
         return _get(id);
     }
 

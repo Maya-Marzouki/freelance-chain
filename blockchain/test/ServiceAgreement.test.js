@@ -51,4 +51,9 @@ describe("ServiceAgreement", function () {
   it("refuse un accord inexistant", async function () {
     await expect(contract.getAgreement(42)).to.be.revertedWithCustomError(contract, "AgreementNotFound");
   });
+
+  it("definit l'arbitre comme le deployeur", async function () {
+    expect(await contract.arbiter()).to.equal(client.address);
+  });
+
 });
