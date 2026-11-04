@@ -3,8 +3,7 @@ const path = require("path");
 const hre = require("hardhat");
 
 // Les contrats a deployer. Le binome ajoute ici son contrat (ex: "EscrowMilestones").
-const CONTRACTS = ["ServiceAgreement"];
-
+const CONTRACTS = ["ServiceAgreement", "EscrowMilestones"];
 async function main() {
   const outDir = path.join(__dirname, "..", "..", "frontend", "src", "contracts");
   fs.mkdirSync(outDir, { recursive: true });
