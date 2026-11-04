@@ -8,6 +8,7 @@ import type {
   ActivityType,
   AgreementAction,
   AgreementStatus,
+  EscrowStatus,
   Milestone,
   MilestoneStatus,
   Role,
@@ -216,15 +217,22 @@ export const HAPPY_PATH: AgreementStatus[] = ["Created", "Accepted", "InProgress
 
 export type MilestoneAction = "submit" | "release";
 
+/**
+ * `escrowStatus` is only known in live mode: the contract refuses to submit a
+ * milestone while the escrow is not funded.
+ */
 export function milestoneAction(
   milestone: Milestone,
   role: Role,
   agreementStatus: AgreementStatus,
+  escrowStatus?: EscrowStatus,
 ): MilestoneAction | null {
   const workOpen = agreementStatus === "Accepted" || agreementStatus === "InProgress" || agreementStatus === "Delivered";
   if (!workOpen) return null;
+  if (escrowStatus && escrowStatus !== "Funded" && escrowStatus !== "InProgress") return null;
   if (milestone.status === "Pending" && role === "freelancer") return "submit";
-  if (milestone.status === "Submitted" && role === "client") return "release";
+  // On-chain, release takes two steps (approve then release): "Approved" is the state between them.
+  if ((milestone.status === "Submitted" || milestone.status === "Approved") && role === "client") return "release";
   return null;
 }
 

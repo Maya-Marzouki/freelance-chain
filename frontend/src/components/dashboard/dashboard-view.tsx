@@ -19,7 +19,7 @@ import { StatCard } from "./stat-card";
 const ACTIVE = new Set(["Accepted", "InProgress", "Delivered"]);
 
 export function DashboardView() {
-  const { agreements, milestones, activity, user } = useAppStore();
+  const { agreements, milestones, activity, user, mode, escrows } = useAppStore();
   const wallet = useWallet();
 
   const stats = useMemo(() => {
@@ -27,15 +27,21 @@ export function DashboardView() {
     const completed = agreements.filter((a) => a.status === "Completed");
     // Escrow is locked while an agreement is active or disputed, minus released milestones.
     const lockedAgreements = agreements.filter((a) => ACTIVE.has(a.status) || a.status === "Disputed");
-    const tvl = lockedAgreements.reduce((sum, a) => {
-      const released = milestones
-        .filter((m) => m.agreementId === a.id && m.status === "Released")
-        .reduce((s, m) => s + m.amountEth, 0);
-      return sum + a.amountEth - released;
-    }, 0);
+    // Live mode: funds really held by the escrow contract.
+    const tvl =
+      mode === "chain"
+        ? escrows
+            .filter((e) => ["Funded", "InProgress", "Disputed"].includes(e.status))
+            .reduce((sum, e) => sum + e.depositedEth - e.releasedEth, 0)
+        : lockedAgreements.reduce((sum, a) => {
+            const released = milestones
+              .filter((m) => m.agreementId === a.id && m.status === "Released")
+              .reduce((s, m) => s + m.amountEth, 0);
+            return sum + a.amountEth - released;
+          }, 0);
     const byStatus = AGREEMENT_STATUSES.map((s) => ({ status: s, count: agreements.filter((a) => a.status === s).length }));
     return { total: agreements.length, active: active.length, completed: completed.length, tvl, byStatus };
-  }, [agreements, milestones]);
+  }, [agreements, milestones, mode, escrows]);
 
   const recent = useMemo(
     () => [...agreements].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 5),

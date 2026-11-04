@@ -30,6 +30,7 @@ export function StatusBadge({ status, className }: { status: AgreementStatus; cl
 const MILESTONE_META: Record<MilestoneStatus, { label: string; className: string }> = {
   Pending: { label: "Pending", className: "bg-slate-100 text-slate-600 ring-slate-200" },
   Submitted: { label: "Awaiting approval", className: "bg-amber-50 text-amber-700 ring-amber-100" },
+  Approved: { label: "Approved", className: "bg-cyan-50 text-cyan-700 ring-cyan-100" },
   Released: { label: "Released", className: "bg-emerald-50 text-emerald-700 ring-emerald-100" },
 };
 

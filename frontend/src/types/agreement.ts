@@ -65,7 +65,8 @@ export interface Agreement {
   timeline: AgreementEvent[];
 }
 
-export type MilestoneStatus = "Pending" | "Submitted" | "Released";
+/** Mirrors `EscrowMilestones.MilestoneStatus`; the demo flow never uses "Approved". */
+export type MilestoneStatus = "Pending" | "Submitted" | "Approved" | "Released";
 
 export interface Milestone {
   id: string;
@@ -75,6 +76,39 @@ export interface Milestone {
   amountEth: number;
   dueDate: string; // ISO
   status: MilestoneStatus;
+  /** On-chain position, set when the milestone is read from `EscrowMilestones`. */
+  escrowId?: number;
+  index?: number;
+}
+
+/**
+ * Status order mirrors the Solidity enum `EscrowMilestones.EscrowStatus`.
+ */
+export const ESCROW_STATUSES = ["Created", "Funded", "InProgress", "Completed", "Disputed", "Cancelled"] as const;
+export type EscrowStatus = (typeof ESCROW_STATUSES)[number];
+
+/** Funds held by `EscrowMilestones` for one agreement (live mode only). */
+export interface Escrow {
+  id: string;
+  /** Id in the escrow contract. */
+  escrowId: number;
+  /** Frontend id of the linked agreement (`AGR-n`). */
+  agreementId: string;
+  client: string;
+  freelancer: string;
+  arbiter: string;
+  totalEth: number;
+  depositedEth: number;
+  releasedEth: number;
+  status: EscrowStatus;
+  milestoneCount: number;
+}
+
+export interface EscrowMilestoneInput {
+  title: string;
+  description: string;
+  amountEth: number;
+  dueDate: string; // yyyy-mm-dd
 }
 
 export type ActivityType =

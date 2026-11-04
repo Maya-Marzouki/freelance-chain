@@ -10,6 +10,7 @@ import { EmptyState, ProgressBar, SimulatedTag, Skeleton } from "@/components/ui
 import { MilestoneBadge, StatusBadge } from "@/components/ui/status-badge";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { useAppStore } from "@/components/providers/app-store";
+import { EscrowControls } from "@/components/escrow/escrow-controls";
 import { useWallet } from "@/components/wallet/wallet-provider";
 import { MOCK_NOW } from "@/lib/mock-data";
 import { daysBetween, formatDate, formatDateTime, formatEth, formatUsd } from "@/lib/utils";
@@ -121,7 +122,7 @@ function AgreementDetailsContent({
   actualRole: Role;
   milestones: ReturnType<typeof useAppStore>["milestones"];
 }) {
-  const { mode } = useAppStore();
+  const { mode, escrowEnabled } = useAppStore();
   const [role, setRole] = useState<ViewRole>(actualRole);
   const [now] = useState(() => (mode === "chain" ? new Date().toISOString() : MOCK_NOW));
   const milestones = allMilestones.filter((m) => m.agreementId === agreement.id);
@@ -269,14 +270,15 @@ function AgreementDetailsContent({
                     ))}
                   </ul>
                 </>
-              ) : (
+              ) : mode === "demo" || !escrowEnabled ? (
                 <p className="flex items-start gap-2 text-sm text-slate-500">
                   <LockKeyhole className="mt-0.5 size-4 shrink-0" aria-hidden />
                   {mode === "chain"
                     ? "Funds are not held by this contract. Payment is handled by the escrow contract."
                     : "Single payment: the full amount is released when the client approves the delivery."}
                 </p>
-              )}
+              ) : null}
+              {mode === "chain" && <EscrowControls agreement={agreement} role={actualRole} />}
             </CardBody>
           </Card>
         </div>

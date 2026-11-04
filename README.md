@@ -42,6 +42,10 @@ npm run dev              # http://localhost:3000
 2. Importer 2 comptes de test affiches par `npm run node` (cle privee de test uniquement, jamais une vraie cle).
 3. Utiliser un compte pour le client, l'autre pour le freelance.
 
+> Les adresses des contrats sont deterministes : sur un noeud neuf, `npm run deploy:local` deploie `ServiceAgreement` puis `EscrowMilestones`
+> aux adresses deja presentes dans `frontend/src/contracts/*.json`. Ne lancez le deploiement qu'une seule fois par noeud neuf,
+> sinon les adresses changent et le fichier JSON est reecrit.
+>
 > Apres chaque redemarrage de `npm run node`, relancer `npm run deploy:local` et reinitialiser les comptes MetaMask
 > (Parametres > Avance > Effacer les donnees d'activite) pour eviter les erreurs de nonce.
 

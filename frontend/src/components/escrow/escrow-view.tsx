@@ -9,6 +9,7 @@ import { ConfirmDialog } from "@/components/ui/modal";
 import { EmptyState, PageHeader, ProgressBar, Segmented } from "@/components/ui/misc";
 import { MilestoneBadge, StatusBadge } from "@/components/ui/status-badge";
 import { StatCard } from "@/components/dashboard/stat-card";
+import { EscrowControls } from "./escrow-controls";
 import { useAppStore } from "@/components/providers/app-store";
 import { useToast } from "@/components/providers/toast-provider";
 import { useWallet } from "@/components/wallet/wallet-provider";
@@ -26,7 +27,8 @@ interface Pending {
 }
 
 export function EscrowView() {
-  const { agreements, milestones, roleFor, performMilestoneAction } = useAppStore();
+  const { agreements, milestones, roleFor, performMilestoneAction, mode, escrows: chainEscrows } = useAppStore();
+  const live = mode === "chain";
   const wallet = useWallet();
   const toast = useToast();
   const [perspective, setPerspective] = useState<Perspective>("auto");
@@ -43,6 +45,16 @@ export function EscrowView() {
   );
 
   const totals = useMemo(() => {
+    if (live) {
+      // Live mode: figures come from the escrow contract itself.
+      const total = chainEscrows.reduce((s, e) => s + e.totalEth, 0);
+      const released = chainEscrows.reduce((s, e) => s + e.releasedEth, 0);
+      const locked = chainEscrows
+        .filter((e) => ["Funded", "InProgress", "Disputed"].includes(e.status))
+        .reduce((s, e) => s + e.depositedEth - e.releasedEth, 0);
+      const awaiting = milestones.filter((m) => m.status === "Submitted").reduce((s, m) => s + m.amountEth, 0);
+      return { total, released, locked, awaiting };
+    }
     let total = 0;
     let released = 0;
     for (const e of escrows) {
@@ -54,9 +66,9 @@ export function EscrowView() {
       .filter((m) => m.status === "Submitted")
       .reduce((s, m) => s + m.amountEth, 0);
     return { total, released, locked: total - released, awaiting };
-  }, [escrows]);
+  }, [escrows, live, chainEscrows, milestones]);
 
-  const roleOf = (a: Agreement): Role => (perspective === "auto" ? roleFor(a, wallet.address) : perspective);
+  const roleOf = (a: Agreement): Role => (live || perspective === "auto" ? roleFor(a, wallet.address) : perspective);
 
   async function confirm() {
     if (!pending) return;
@@ -67,7 +79,7 @@ export function EscrowView() {
       toast.success(
         pending.action === "release" ? "Payment released" : "Milestone submitted",
         pending.action === "release"
-          ? `${formatEth(pending.milestone.amountEth)} released to ${pending.agreement.freelancer.name} (simulated).`
+          ? `${formatEth(pending.milestone.amountEth)} released to ${pending.agreement.freelancer.name}${live ? "." : " (simulated)."}`
           : "The client has been asked to review it.",
       );
       setPending(null);
@@ -84,6 +96,7 @@ export function EscrowView() {
         title="Escrow & Milestones"
         description="Funds are locked per agreement and released milestone by milestone."
         actions={
+          live ? undefined : (
           <div className="flex items-center gap-2">
             <span className="text-sm whitespace-nowrap text-slate-500">Acting as</span>
             <Segmented
@@ -97,6 +110,7 @@ export function EscrowView() {
               ]}
             />
           </div>
+          )
         }
       />
 
@@ -137,7 +151,11 @@ export function EscrowView() {
             <EmptyState
               icon={<LockKeyhole />}
               title="No escrow yet"
-              description="Agreements with milestone-based payments will appear here."
+              description={
+                live
+                  ? "Open one of your agreements and set up its escrow to lock the payment milestone by milestone."
+                  : "Agreements with milestone-based payments will appear here."
+              }
             />
           </Card>
         )}
@@ -145,7 +163,8 @@ export function EscrowView() {
         {escrows.map(({ agreement, milestones: ms }) => {
           const released = ms.filter((m) => m.status === "Released").reduce((s, m) => s + m.amountEth, 0);
           const doneCount = ms.filter((m) => m.status === "Released").length;
-          const isOpen = expanded[agreement.id] ?? ms.some((m) => m.status === "Submitted");
+          const isOpen = expanded[agreement.id] ?? ms.some((m) => m.status === "Submitted" || m.status === "Approved");
+          const escrowStatus = live ? chainEscrows.find((e) => e.agreementId === agreement.id)?.status : undefined;
           const role = roleOf(agreement);
           const panelId = `escrow-${agreement.id}`;
           return (
@@ -191,7 +210,7 @@ export function EscrowView() {
                 <div id={panelId} className="animate-fade-in border-t border-slate-100 bg-slate-50/40 px-5 py-5 sm:px-6">
                   <ol className="space-y-3">
                     {ms.map((m, i) => {
-                      const action = milestoneAction(m, role, agreement.status);
+                      const action = milestoneAction(m, role, agreement.status, escrowStatus);
                       return (
                         <li
                           key={m.id}
@@ -204,7 +223,9 @@ export function EscrowView() {
                                 ? "bg-emerald-500 text-white"
                                 : m.status === "Submitted"
                                   ? "bg-amber-100 text-amber-700"
-                                  : "bg-slate-100 text-slate-500",
+                                  : m.status === "Approved"
+                                    ? "bg-cyan-100 text-cyan-700"
+                                    : "bg-slate-100 text-slate-500",
                             )}
                             aria-hidden
                           >
@@ -230,7 +251,8 @@ export function EscrowView() {
                               >
                                 {action === "release" ? (
                                   <>
-                                    <Banknote className="size-4" aria-hidden /> Approve & Release
+                                    <Banknote className="size-4" aria-hidden />{" "}
+                                    {m.status === "Approved" ? "Release payment" : "Approve & Release"}
                                   </>
                                 ) : (
                                   <>
@@ -244,9 +266,15 @@ export function EscrowView() {
                                   ? "Paid out"
                                   : m.status === "Submitted"
                                     ? "Client approval required"
-                                    : agreement.status === "Disputed"
-                                      ? "Frozen by dispute"
-                                      : "Freelancer to submit"}
+                                    : m.status === "Approved"
+                                      ? "Payment pending release"
+                                      : agreement.status === "Disputed"
+                                        ? "Frozen by dispute"
+                                        : escrowStatus === "Created"
+                                          ? "Escrow not funded yet"
+                                          : escrowStatus === "Disputed" || escrowStatus === "Cancelled"
+                                            ? "Escrow frozen or closed"
+                                            : "Freelancer to submit"}
                               </span>
                             )}
                           </div>
@@ -254,6 +282,11 @@ export function EscrowView() {
                       );
                     })}
                   </ol>
+                  {live && (
+                    <div className="mt-4 rounded-xl border border-slate-200/80 bg-white p-4">
+                      <EscrowControls agreement={agreement} role={role} />
+                    </div>
+                  )}
                   <Link
                     href={`/agreements/${agreement.id}`}
                     className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-brand-600 hover:text-brand-700"
@@ -275,10 +308,12 @@ export function EscrowView() {
         title={pending?.action === "release" ? "Approve milestone and release funds?" : "Submit milestone for review?"}
         description={
           pending?.action === "release"
-            ? `${formatEth(pending.milestone.amountEth)} will be released from escrow to ${pending.agreement.freelancer.name}. This cannot be undone.`
+            ? live && pending.milestone.status === "Submitted"
+              ? `${formatEth(pending.milestone.amountEth)} will be released to ${pending.agreement.freelancer.name}. MetaMask asks for two confirmations: approve the milestone, then release the payment. This cannot be undone.`
+              : `${formatEth(pending.milestone.amountEth)} will be released from escrow to ${pending.agreement.freelancer.name}. This cannot be undone.`
             : "The client will be notified to review and approve this milestone."
         }
-        confirmLabel={pending?.action === "release" ? "Approve & Release" : "Submit"}
+        confirmLabel={pending?.action === "release" ? (pending.milestone.status === "Approved" ? "Release payment" : "Approve & Release") : "Submit"}
         icon={
           pending?.action === "release" ? (
             <Banknote className="text-emerald-500" />
@@ -291,7 +326,7 @@ export function EscrowView() {
           <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-4 text-sm">
             <p className="font-medium text-navy-900">{pending.milestone.title}</p>
             <p className="text-slate-500">{pending.agreement.title}</p>
-            <p className="mt-2 text-xs text-amber-700">Demo mode: simulated transaction, no funds move.</p>
+            {!live && <p className="mt-2 text-xs text-amber-700">Demo mode: simulated transaction, no funds move.</p>}
           </div>
         )}
       </ConfirmDialog>
