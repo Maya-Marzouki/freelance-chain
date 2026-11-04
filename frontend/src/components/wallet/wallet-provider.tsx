@@ -41,6 +41,24 @@ function writeFlag(value: boolean) {
   }
 }
 
+const WALLET_TIMEOUT_MS = 4000;
+
+function withTimeout<T>(promise: Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("The wallet did not respond.")), WALLET_TIMEOUT_MS);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
 export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<WalletState>({
     status: "initializing",
@@ -62,8 +80,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     (async () => {
       try {
-        const chainId = await getChainId();
-        const accounts = readFlag() ? [] : await getAuthorizedAccounts();
+        // A wallet that never answers must not leave the button hidden forever.
+        const chainId = await withTimeout(getChainId());
+        const accounts = readFlag() ? [] : await withTimeout(getAuthorizedAccounts());
         if (cancelled) return;
         setState({
           status: accounts.length ? "connected" : "disconnected",

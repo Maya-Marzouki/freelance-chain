@@ -1,9 +1,19 @@
 {
-  "address": "0x0000000000000000000000000000000000000000",
+  "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
   "abi": [
     {
       "inputs": [],
+      "stateMutability": "nonpayable",
+      "type": "constructor"
+    },
+    {
+      "inputs": [],
       "name": "AgreementNotFound",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "DeadlineNotPassed",
       "type": "error"
     },
     {
@@ -14,7 +24,7 @@
     {
       "inputs": [
         {
-          "internalType": "enum ServiceAgreement.Status",
+          "internalType": "enum IServiceAgreement.Status",
           "name": "current",
           "type": "uint8"
         }
@@ -24,7 +34,22 @@
     },
     {
       "inputs": [],
+      "name": "NotArbiter",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "NotClient",
+      "type": "error"
+    },
+    {
+      "inputs": [],
       "name": "NotFreelancer",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "NotParty",
       "type": "error"
     },
     {
@@ -63,13 +88,13 @@
         },
         {
           "indexed": false,
-          "internalType": "enum ServiceAgreement.Status",
+          "internalType": "enum IServiceAgreement.Status",
           "name": "oldStatus",
           "type": "uint8"
         },
         {
           "indexed": false,
-          "internalType": "enum ServiceAgreement.Status",
+          "internalType": "enum IServiceAgreement.Status",
           "name": "newStatus",
           "type": "uint8"
         }
@@ -101,6 +126,58 @@
         }
       ],
       "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "id",
+          "type": "uint256"
+        }
+      ],
+      "name": "approveDelivery",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "arbiter",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "id",
+          "type": "uint256"
+        }
+      ],
+      "name": "cancel",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "id",
+          "type": "uint256"
+        }
+      ],
+      "name": "cancelOverdue",
+      "outputs": [],
+      "stateMutability": "nonpayable",
       "type": "function"
     },
     {
@@ -190,17 +267,74 @@
               "type": "uint256"
             },
             {
-              "internalType": "enum ServiceAgreement.Status",
+              "internalType": "enum IServiceAgreement.Status",
               "name": "status",
               "type": "uint8"
             }
           ],
-          "internalType": "struct ServiceAgreement.Agreement",
+          "internalType": "struct IServiceAgreement.Agreement",
           "name": "",
           "type": "tuple"
         }
       ],
       "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "id",
+          "type": "uint256"
+        }
+      ],
+      "name": "markDelivered",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "id",
+          "type": "uint256"
+        }
+      ],
+      "name": "raiseDispute",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "id",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bool",
+          "name": "favorFreelancer",
+          "type": "bool"
+        }
+      ],
+      "name": "resolveDispute",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "id",
+          "type": "uint256"
+        }
+      ],
+      "name": "startWork",
+      "outputs": [],
+      "stateMutability": "nonpayable",
       "type": "function"
     }
   ]

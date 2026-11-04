@@ -31,8 +31,21 @@ Created --accept--> Accepted --start--> InProgress --deliver--> Delivered --appr
 | `raiseDispute` | client ou freelance | InProgress / Delivered | Disputed |
 | `resolveDispute` | arbitre | Disputed | Completed ou Cancelled |
 
+## Frontend : modes demo et chain
+
+Le store (`frontend/src/components/providers/app-store.tsx`) fonctionne en deux modes :
+
+| Mode | Condition | Donnees |
+|------|-----------|---------|
+| demo | contrat non deploye, ou portefeuille non connecte / pas sur le reseau 31337 | donnees fictives en memoire |
+| chain | adresse du contrat renseignee (`npm run deploy:local`) et MetaMask connecte au reseau Hardhat | lues et ecrites sur `ServiceAgreement` |
+
+- `lib/agreement-chain.ts` : lecture des accords et de l'historique (evenements `AgreementCreated` et `StatusChanged`), envoi des transactions, traduction des erreurs du contrat.
+- `lib/agreement-meta.ts` : le texte des conditions et la description restent hors chaine (localStorage du navigateur, indexes par `termsHash`). En production on utiliserait IPFS ou une base de donnees.
+- Le client d'un accord est le portefeuille connecte (`msg.sender`). Pour agir en freelance ou en arbitre, changer de compte dans MetaMask.
+- Les jalons d'escrow (contrat B) ne sont pas sur la chaine : vides en mode chain.
+
 ## Reste a faire
 
 - Decider si le contrat gere les fonds (escrow en ETH + `ReentrancyGuard`) ou seulement l'etat de l'accord (voir `BRIEF_BINOME.md` : l'escrow est dans le contrat B).
-- Pages frontend : creation, liste, detail avec boutons selon le role et le statut.
 - Interface avec le contrat B (reference a l'`id` d'un accord).

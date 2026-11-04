@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ShieldCheck, X } from "lucide-react";
+import { useAppStore } from "@/components/providers/app-store";
 import { cn } from "@/lib/utils";
 import { Logo } from "./logo";
 import { APP_NAV, isActive } from "./navigation";
@@ -49,6 +50,7 @@ function ActiveNavLinks({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
+  const { mode } = useAppStore();
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-16 items-center px-5">
@@ -63,10 +65,12 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       <div className="m-3 rounded-xl border border-white/10 bg-white/5 p-4">
         <div className="flex items-center gap-2 text-sm font-medium text-white">
           <ShieldCheck className="size-4 text-cyan-400" aria-hidden />
-          Demo mode
+          {mode === "chain" ? "Live · Hardhat" : "Demo mode"}
         </div>
         <p className="mt-1.5 text-xs leading-relaxed text-slate-400">
-          Data and transactions are simulated locally. Nothing is sent to a blockchain yet.
+          {mode === "chain"
+            ? "Agreements are read from and written to the ServiceAgreement contract on your local blockchain."
+            : "Data and transactions are simulated locally. Connect MetaMask to the Hardhat network to go live."}
         </p>
       </div>
     </div>

@@ -36,10 +36,12 @@ interface Props {
   /** Show transaction hashes. */
   showTx?: boolean;
   compact?: boolean;
+  /** Flag transaction hashes as simulated (demo mode). */
+  simulated?: boolean;
   resolveName?: (address: string) => string | undefined;
 }
 
-export function ActivityTimeline({ items, showAgreement, showTx = true, compact, resolveName }: Props) {
+export function ActivityTimeline({ items, showAgreement, showTx = true, compact, simulated = true, resolveName }: Props) {
   return (
     <ol className="relative">
       {items.map((item, i) => {
@@ -82,7 +84,7 @@ export function ActivityTimeline({ items, showAgreement, showTx = true, compact,
                   <span className="rounded-md bg-slate-50 px-1.5 py-0.5 font-mono text-[11px] text-slate-500 ring-1 ring-slate-200 ring-inset">
                     tx {shortenHash(item.txHash)}
                   </span>
-                  <SimulatedTag />
+                  {simulated && <SimulatedTag />}
                 </p>
               )}
             </div>

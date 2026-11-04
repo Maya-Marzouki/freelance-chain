@@ -1,14 +1,28 @@
 "use client";
 
 /**
- * In-memory application store used in demo mode. It simulates what will
- * later be read from / written to the ServiceAgreement and escrow contracts.
- * State lives for the browser session only (it resets on full reload).
+ * Application store with two modes:
+ *
+ * - demo: in-memory data that simulates the contracts (resets on full reload).
+ * - chain: agreements are read from and written to the deployed
+ *   `ServiceAgreement` contract. Active when the contract is deployed and the
+ *   wallet is connected to the Hardhat network. Escrow milestones (contract B)
+ *   are not on-chain yet and stay empty in this mode.
  */
-import { createContext, useCallback, useContext, useMemo, useReducer } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useState } from "react";
+import { useWallet } from "@/components/wallet/wallet-provider";
+import { saveMeta } from "@/lib/agreement-meta";
+import {
+  chainErrorMessage,
+  createOnChain,
+  readAgreements,
+  readArbiter,
+  sendAction,
+} from "@/lib/agreement-chain";
+import { getServiceAgreementReader } from "@/lib/agreement-contract";
 import { ACTIONS, NEXT_MILESTONE_STATUS, type MilestoneAction } from "@/lib/lifecycle";
 import { DEMO_USER, MOCK_AGREEMENTS, MOCK_MILESTONES, buildActivityFeed } from "@/lib/mock-data";
-import { hashTerms } from "@/lib/ethereum";
+import { HARDHAT_CHAIN_ID, getServiceAgreementContract, hashTerms, isContractDeployed } from "@/lib/ethereum";
 import { randomHex, sameAddress, sleep } from "@/lib/utils";
 import type {
   ActivityItem,
@@ -59,7 +73,17 @@ function reducer(state: State, e: Event): State {
   }
 }
 
+export type StoreMode = "demo" | "chain";
+export type ChainStatus = "idle" | "loading" | "ready" | "error";
+
 interface StoreValue extends State {
+  mode: StoreMode;
+  chainStatus: ChainStatus;
+  chainError: string | null;
+  /** Address allowed to resolve disputes (chain mode only). */
+  arbiterAddress: string | null;
+  /** Reloads agreements from the blockchain (no-op in demo mode). */
+  refresh: () => Promise<void>;
   user: Party;
   activity: ActivityItem[];
   getAgreement: (id: string) => Agreement | undefined;
@@ -73,6 +97,8 @@ const StoreContext = createContext<StoreValue | null>(null);
 
 /** Simulated network latency for mock transactions. */
 const MOCK_LATENCY = 1100;
+const CHAIN_POLL_MS = 5000;
+const NO_MILESTONES: Milestone[] = [];
 
 export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, {
@@ -81,7 +107,54 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     extraActivity: [],
   });
 
-  const getAgreement = useCallback((id: string) => state.agreements.find((a) => a.id === id), [state.agreements]);
+  const wallet = useWallet();
+  const mode: StoreMode =
+    isContractDeployed && wallet.status === "connected" && wallet.network?.chainId === HARDHAT_CHAIN_ID
+      ? "chain"
+      : "demo";
+  const chainMode = mode === "chain";
+
+  const [chain, setChain] = useState<{ status: ChainStatus; error: string | null; agreements: Agreement[]; arbiter: string | null }>({
+    status: "idle",
+    error: null,
+    agreements: [],
+    arbiter: null,
+  });
+
+  const loadChain = useCallback(async (): Promise<Agreement[]> => {
+    const { contract, provider } = getServiceAgreementReader();
+    try {
+      const [agreements, arbiter] = await Promise.all([readAgreements(contract, provider), readArbiter(contract)]);
+      setChain({ status: "ready", error: null, agreements, arbiter });
+      return agreements;
+    } catch (err) {
+      setChain((c) => ({ ...c, status: "error", error: chainErrorMessage(err, contract) }));
+      throw err;
+    }
+  }, []);
+
+  const refresh = useCallback(async () => {
+    if (!chainMode) return;
+    await loadChain().catch(() => undefined);
+  }, [chainMode, loadChain]);
+
+  useEffect(() => {
+    if (!chainMode) return;
+    void refresh();
+    const timer = setInterval(() => void refresh(), CHAIN_POLL_MS);
+    const onFocus = () => void refresh();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [chainMode, refresh]);
+
+  const agreements = chainMode ? chain.agreements : state.agreements;
+  const milestones = chainMode ? NO_MILESTONES : state.milestones;
+  const chainStatus: ChainStatus = chainMode ? (chain.status === "idle" ? "loading" : chain.status) : "idle";
+
+  const getAgreement = useCallback((id: string) => agreements.find((a) => a.id === id), [agreements]);
 
   /** Role of "you": the demo persona or the connected wallet, if any. */
   const roleFor = useCallback((agreement: Agreement, walletAddress?: string | null): Role => {
@@ -93,6 +166,25 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
 
   const createAgreement = useCallback(
     async (input: CreateAgreementInput) => {
+      if (chainMode) {
+        if (!sameAddress(input.clientAddress, wallet.address)) {
+          throw new Error("The client of an on-chain agreement is the connected wallet. Use your wallet address.");
+        }
+        const contract = await getServiceAgreementContract();
+        try {
+          const { onChainId, termsHash } = await createOnChain(contract, input);
+          saveMeta(termsHash, {
+            description: input.description,
+            terms: input.terms,
+            documentName: input.documentName,
+          });
+          const created = (await loadChain()).find((a) => a.onChainId === onChainId);
+          if (!created) throw new Error("The agreement was created but could not be read back. Refresh the page.");
+          return created;
+        } catch (err) {
+          throw new Error(chainErrorMessage(err, contract));
+        }
+      }
       await sleep(MOCK_LATENCY);
       const now = new Date().toISOString();
       const maxId = Math.max(...state.agreements.map((a) => a.onChainId));
@@ -130,10 +222,29 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       dispatch({ type: "create", agreement });
       return agreement;
     },
-    [state.agreements],
+    [chainMode, wallet.address, loadChain, state.agreements],
   );
 
-  const performAction = useCallback(async (agreementId: string, action: AgreementAction, actor: string) => {
+  const performAction = useCallback(
+    async (agreementId: string, action: AgreementAction, actor: string) => {
+    if (chainMode) {
+      const target = agreements.find((a) => a.id === agreementId);
+      if (!target) throw new Error("Agreement not found on the blockchain.");
+      const contract = await getServiceAgreementContract();
+      try {
+        const txHash = await sendAction(contract, action, target.onChainId);
+        await loadChain().catch(() => undefined);
+        return {
+          id: `${agreementId}-${ACTIONS[action].event}-${txHash}`,
+          type: ACTIONS[action].event,
+          date: new Date().toISOString(),
+          actor: wallet.address ?? actor,
+          txHash,
+        } satisfies AgreementEvent;
+      } catch (err) {
+        throw new Error(chainErrorMessage(err, contract));
+      }
+    }
     await sleep(MOCK_LATENCY);
     const event: AgreementEvent = {
       id: `${agreementId}-${ACTIONS[action].event}-${Date.now()}`,
@@ -144,7 +255,9 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     };
     dispatch({ type: "transition", id: agreementId, action, event });
     return event;
-  }, []);
+    },
+    [chainMode, agreements, wallet.address, loadChain],
+  );
 
   const performMilestoneAction = useCallback(
     async (milestoneId: string, action: MilestoneAction, actor: string) => {
@@ -176,13 +289,23 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   );
 
   const activity = useMemo(
-    () => [...state.extraActivity, ...buildActivityFeed(state.agreements)].sort((a, b) => b.date.localeCompare(a.date)),
-    [state.agreements, state.extraActivity],
+    () =>
+      [...(chainMode ? [] : state.extraActivity), ...buildActivityFeed(agreements)].sort((a, b) =>
+        b.date.localeCompare(a.date),
+      ),
+    [chainMode, agreements, state.extraActivity],
   );
 
   const value = useMemo<StoreValue>(
     () => ({
       ...state,
+      agreements,
+      milestones,
+      mode,
+      chainStatus,
+      chainError: chainMode ? chain.error : null,
+      arbiterAddress: chainMode ? chain.arbiter : null,
+      refresh,
       user: DEMO_USER,
       activity,
       getAgreement,
@@ -191,7 +314,23 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       performAction,
       performMilestoneAction,
     }),
-    [state, activity, getAgreement, roleFor, createAgreement, performAction, performMilestoneAction],
+    [
+      state,
+      agreements,
+      milestones,
+      mode,
+      chainMode,
+      chainStatus,
+      chain.error,
+      chain.arbiter,
+      refresh,
+      activity,
+      getAgreement,
+      roleFor,
+      createAgreement,
+      performAction,
+      performMilestoneAction,
+    ],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

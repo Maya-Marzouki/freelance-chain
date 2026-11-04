@@ -13,7 +13,7 @@ import { useAppStore } from "@/components/providers/app-store";
 import { useWallet } from "@/components/wallet/wallet-provider";
 import { MOCK_NOW } from "@/lib/mock-data";
 import { daysBetween, formatDate, formatDateTime, formatEth, formatUsd } from "@/lib/utils";
-import type { Agreement, Party, Role } from "@/types/agreement";
+import type { Agreement, Party, Role, ViewRole } from "@/types/agreement";
 import { AgreementActions } from "./agreement-actions";
 import { LifecycleStepper } from "./lifecycle-stepper";
 
@@ -67,7 +67,7 @@ function DetailsSkeleton() {
 
 export function AgreementDetails({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { getAgreement, roleFor, milestones } = useAppStore();
+  const { getAgreement, roleFor, milestones, mode, chainStatus, chainError } = useAppStore();
   const wallet = useWallet();
   const agreement = getAgreement(decodeURIComponent(id));
   const [ready, setReady] = useState(false);
@@ -77,7 +77,20 @@ export function AgreementDetails({ params }: { params: Promise<{ id: string }> }
     return () => clearTimeout(t);
   }, []);
 
-  if (!ready) return <DetailsSkeleton />;
+  if (!ready || (!agreement && chainStatus === "loading")) return <DetailsSkeleton />;
+
+  if (!agreement && chainStatus === "error") {
+    return (
+      <Card>
+        <EmptyState
+          icon={<FileSearch />}
+          title="Could not read the blockchain"
+          description={chainError ?? "The blockchain is not reachable."}
+          action={<ButtonLink href="/agreements">Back to agreements</ButtonLink>}
+        />
+      </Card>
+    );
+  }
 
   if (!agreement) {
     return (
@@ -85,7 +98,11 @@ export function AgreementDetails({ params }: { params: Promise<{ id: string }> }
         <EmptyState
           icon={<FileSearch />}
           title="Agreement not found"
-          description={`No agreement with ID “${decodeURIComponent(id)}” exists. Demo agreements created in this session are lost after a full page reload.`}
+          description={
+            mode === "chain"
+              ? `No agreement with ID “${decodeURIComponent(id)}” exists on the connected blockchain.`
+              : `No agreement with ID “${decodeURIComponent(id)}” exists. Demo agreements created in this session are lost after a full page reload.`
+          }
           action={<ButtonLink href="/agreements">Back to agreements</ButtonLink>}
         />
       </Card>
@@ -104,10 +121,12 @@ function AgreementDetailsContent({
   actualRole: Role;
   milestones: ReturnType<typeof useAppStore>["milestones"];
 }) {
-  const [role, setRole] = useState<Role>(actualRole);
+  const { mode } = useAppStore();
+  const [role, setRole] = useState<ViewRole>(actualRole);
+  const [now] = useState(() => (mode === "chain" ? new Date().toISOString() : MOCK_NOW));
   const milestones = allMilestones.filter((m) => m.agreementId === agreement.id);
   const released = milestones.filter((m) => m.status === "Released").reduce((s, m) => s + m.amountEth, 0);
-  const daysLeft = daysBetween(MOCK_NOW, agreement.deadline);
+  const daysLeft = daysBetween(now, agreement.deadline);
   const nameOf = (address: string) =>
     address === agreement.client.address
       ? agreement.client.name
@@ -180,7 +199,7 @@ function AgreementDetailsContent({
           <Card>
             <CardHeader title="Lifecycle history" description="Every status change is recorded as a contract event." />
             <CardBody>
-              <ActivityTimeline items={timeline} resolveName={nameOf} />
+              <ActivityTimeline items={timeline} simulated={mode === "demo"} resolveName={nameOf} />
             </CardBody>
           </Card>
         </div>
@@ -209,7 +228,7 @@ function AgreementDetailsContent({
                 <Meta icon={<Hash />} label="Creation transaction">
                   <span className="flex flex-wrap items-center gap-2">
                     <CopyValue value={agreement.txHash} chars={6} label="Copy transaction hash" />
-                    <SimulatedTag />
+                    {mode === "demo" && <SimulatedTag />}
                   </span>
                 </Meta>
                 <Meta icon={<Hash />} label="Terms hash (keccak256)">
@@ -253,7 +272,9 @@ function AgreementDetailsContent({
               ) : (
                 <p className="flex items-start gap-2 text-sm text-slate-500">
                   <LockKeyhole className="mt-0.5 size-4 shrink-0" aria-hidden />
-                  Single payment: the full amount is released when the client approves the delivery.
+                  {mode === "chain"
+                    ? "Funds are not held by this contract. Payment is handled by the escrow contract."
+                    : "Single payment: the full amount is released when the client approves the delivery."}
                 </p>
               )}
             </CardBody>

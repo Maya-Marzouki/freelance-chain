@@ -21,6 +21,12 @@ export type Role = "client" | "freelancer" | "observer";
 /** Roles a demo user can impersonate in the simulated UI. */
 export type DemoRole = Exclude<Role, "observer">;
 
+/**
+ * Role selectable in the demo role switcher. The arbiter is not a party to the
+ * agreement: on-chain it is a single address set when the contract is deployed.
+ */
+export type ViewRole = Role | "arbiter";
+
 export interface Party {
   name: string;
   address: string;
@@ -95,7 +101,10 @@ export type AgreementAction =
   | "deliver"
   | "approve"
   | "dispute"
-  | "cancel";
+  | "cancel"
+  | "cancelOverdue"
+  | "resolveForFreelancer"
+  | "resolveForClient";
 
 /** Payload produced by the create-agreement form. */
 export interface CreateAgreementInput {

@@ -26,7 +26,7 @@ const FILTERS: { value: ActivityType | "all"; label: string }[] = [
 const PAGE = 12;
 
 export function ActivityView() {
-  const { activity, agreements } = useAppStore();
+  const { activity, agreements, mode } = useAppStore();
   const [type, setType] = useState<ActivityType | "all">("all");
   const [limit, setLimit] = useState(PAGE);
 
@@ -111,7 +111,7 @@ export function ActivityView() {
                 {month}
               </h2>
               <Card className="px-5 py-6 sm:px-6">
-                <ActivityTimeline items={items} showAgreement resolveName={(a) => names.get(a)} />
+                <ActivityTimeline items={items} showAgreement simulated={mode === "demo"} resolveName={(a) => names.get(a)} />
               </Card>
             </section>
           ))}

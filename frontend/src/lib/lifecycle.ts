@@ -21,6 +21,11 @@ export interface ActionDefinition {
   from: AgreementStatus[];
   to: AgreementStatus;
   event: ActivityType;
+  /**
+   * Extra condition enforced by the contract besides role and status:
+   * `deadlinePassed` (cancelOverdue) or `arbiter` (resolve functions).
+   */
+  requires?: "deadlinePassed" | "arbiter";
   tone: "primary" | "danger" | "neutral";
   confirmTitle: string;
   confirmBody: string;
@@ -99,21 +104,90 @@ export const ACTIONS: Record<AgreementAction, ActionDefinition> = {
     confirmTitle: "Cancel this agreement?",
     confirmBody: "The agreement will be permanently cancelled and any locked funds returned to the client.",
   },
+  cancelOverdue: {
+    action: "cancelOverdue",
+    label: "Cancel (Overdue)",
+    description: "Cancel because the deadline passed without delivery.",
+    allowedRoles: ["client"],
+    from: ["InProgress"],
+    requires: "deadlinePassed",
+    to: "Cancelled",
+    event: "AgreementCancelled",
+    tone: "danger",
+    confirmTitle: "Cancel this overdue agreement?",
+    confirmBody: "The deadline has passed and nothing was delivered. The agreement will be cancelled.",
+  },
+  resolveForFreelancer: {
+    action: "resolveForFreelancer",
+    label: "Rule for Freelancer",
+    description: "Close the dispute in favour of the freelancer.",
+    allowedRoles: ["client", "freelancer", "observer"],
+    from: ["Disputed"],
+    requires: "arbiter",
+    to: "Completed",
+    event: "AgreementCompleted",
+    tone: "primary",
+    confirmTitle: "Rule in favour of the freelancer?",
+    confirmBody: "The agreement becomes Completed: the freelancer is entitled to payment. This decision is final.",
+  },
+  resolveForClient: {
+    action: "resolveForClient",
+    label: "Rule for Client",
+    description: "Close the dispute in favour of the client.",
+    allowedRoles: ["client", "freelancer", "observer"],
+    from: ["Disputed"],
+    requires: "arbiter",
+    to: "Cancelled",
+    event: "AgreementCancelled",
+    tone: "danger",
+    confirmTitle: "Rule in favour of the client?",
+    confirmBody: "The agreement becomes Cancelled: the client is entitled to a refund. This decision is final.",
+  },
 };
 
-export const ACTION_ORDER: AgreementAction[] = ["accept", "start", "deliver", "approve", "dispute", "cancel"];
+export const ACTION_ORDER: AgreementAction[] = [
+  "accept",
+  "start",
+  "deliver",
+  "approve",
+  "resolveForFreelancer",
+  "dispute",
+  "cancel",
+  "cancelOverdue",
+  "resolveForClient",
+];
 
-export function canPerform(action: AgreementAction, role: Role, status: AgreementStatus): boolean {
+/** Facts about the viewer / chain that role and status alone cannot express. */
+export interface ActionContext {
+  /** `block.timestamp` is past the agreement deadline. */
+  deadlinePassed?: boolean;
+  /** The viewer is the contract's arbiter. */
+  isArbiter?: boolean;
+}
+
+export function canPerform(
+  action: AgreementAction,
+  role: Role,
+  status: AgreementStatus,
+  context: ActionContext = {},
+): boolean {
   const def = ACTIONS[action];
+  if (def.requires === "arbiter") return !!context.isArbiter && def.from.includes(status);
+  if (def.requires === "deadlinePassed" && !context.deadlinePassed) return false;
   return def.allowedRoles.includes(role) && def.from.includes(status);
 }
 
-export function availableActions(role: Role, status: AgreementStatus): ActionDefinition[] {
-  return ACTION_ORDER.filter((a) => canPerform(a, role, status)).map((a) => ACTIONS[a]);
+export function availableActions(
+  role: Role,
+  status: AgreementStatus,
+  context: ActionContext = {},
+): ActionDefinition[] {
+  return ACTION_ORDER.filter((a) => canPerform(a, role, status, context)).map((a) => ACTIONS[a]);
 }
 
 /** Explains why nothing is actionable, for empty action panels. */
-export function waitingMessage(role: Role, status: AgreementStatus): string {
+export function waitingMessage(role: Role, status: AgreementStatus, isArbiter = false): string {
+  if (role === "observer" && isArbiter && status === "Disputed") return "";
   if (role === "observer") return "You are not a party to this agreement. Actions are limited to the client and freelancer.";
   switch (status) {
     case "Created":
@@ -129,7 +203,9 @@ export function waitingMessage(role: Role, status: AgreementStatus): string {
     case "Cancelled":
       return "This agreement was cancelled. No further actions are available.";
     case "Disputed":
-      return "A dispute is open. Funds remain locked until it is resolved.";
+      return isArbiter
+        ? ""
+        : "A dispute is open. Only the arbiter can resolve it: the agreement then becomes Completed or Cancelled.";
   }
 }
 

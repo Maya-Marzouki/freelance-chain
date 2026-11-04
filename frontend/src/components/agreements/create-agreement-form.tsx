@@ -103,7 +103,7 @@ export function CreateAgreementForm() {
   const router = useRouter();
   const toast = useToast();
   const wallet = useWallet();
-  const { user, createAgreement } = useAppStore();
+  const { user, createAgreement, mode } = useAppStore();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [raw, setRaw] = useState<FormValues>({
@@ -179,11 +179,13 @@ export function CreateAgreementForm() {
     };
     setCreating(true);
     try {
-      // When the contract is deployed, this becomes `createAgreementOnChain(input)`.
       const agreement = await createAgreement(input);
       setReviewOpen(false);
       setCreated(agreement);
-      toast.success("Agreement created", `${agreement.id} was recorded (simulated).`);
+      toast.success(
+        "Agreement created",
+        mode === "chain" ? `${agreement.id} was recorded on the blockchain.` : `${agreement.id} was recorded (simulated).`,
+      );
     } catch (error) {
       toast.error("Could not create agreement", (error as Error).message);
     } finally {
@@ -491,7 +493,7 @@ export function CreateAgreementForm() {
               <dt className="text-slate-500">Transaction</dt>
               <dd className="flex items-center gap-2">
                 <CopyValue value={created.txHash} chars={6} label="Copy transaction hash" />
-                <SimulatedTag />
+                {mode === "demo" && <SimulatedTag />}
               </dd>
             </div>
           </dl>
