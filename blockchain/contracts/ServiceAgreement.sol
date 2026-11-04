@@ -25,6 +25,7 @@ contract ServiceAgreement is IServiceAgreement {
     error AgreementNotFound();
     error InvalidParameters();
     error NotArbiter();
+    error DeadlineNotPassed();
 
     constructor() {
         arbiter = msg.sender;
@@ -83,6 +84,29 @@ contract ServiceAgreement is IServiceAgreement {
         if (msg.sender != a.client) revert NotClient();
 
         _transition(id, a, Status.Delivered, Status.Completed);
+    }
+
+    /// @notice Annulation libre par le client, tant que le travail n'a pas commence.
+    function cancel(uint256 id) external {
+        Agreement storage a = _get(id);
+        if (msg.sender != a.client) revert NotClient();
+        if (a.status != Status.Created && a.status != Status.Accepted) {
+            revert InvalidStatus(a.status);
+        }
+
+        _transition(id, a, a.status, Status.Cancelled);
+    }
+
+    /// @notice Annulation par le client apres l'echeance, si rien n'a ete livre.
+    function cancelOverdue(uint256 id) external {
+        Agreement storage a = _get(id);
+        if (msg.sender != a.client) revert NotClient();
+        if (a.status != Status.Accepted && a.status != Status.InProgress) {
+            revert InvalidStatus(a.status);
+        }
+        if (block.timestamp <= a.deadline) revert DeadlineNotPassed();
+
+        _transition(id, a, a.status, Status.Cancelled);
     }
 
     function getAgreement(uint256 id) external view override returns (Agreement memory) {

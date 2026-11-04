@@ -135,6 +135,80 @@ describe("ServiceAgreement", function () {
     });
   });
 
+  describe("cancel", function () {
+    it("le client annule un accord Created", async function () {
+      await create();
+      await expect(contract.connect(client).cancel(1))
+        .to.emit(contract, "StatusChanged").withArgs(1, 0, 5); // Created -> Cancelled
+      expect((await contract.getAgreement(1)).status).to.equal(5n);
+    });
+
+    it("le client annule un accord Accepted", async function () {
+      await createAndAccept();
+      await expect(contract.connect(client).cancel(1))
+        .to.emit(contract, "StatusChanged").withArgs(1, 1, 5); // Accepted -> Cancelled
+      expect((await contract.getAgreement(1)).status).to.equal(5n);
+    });
+
+    it("refuse un appelant autre que le client", async function () {
+      await create();
+      await expect(contract.connect(freelancer).cancel(1))
+        .to.be.revertedWithCustomError(contract, "NotClient");
+      await expect(contract.connect(stranger).cancel(1))
+        .to.be.revertedWithCustomError(contract, "NotClient");
+    });
+
+    it("refuse une fois le travail commence", async function () {
+      await createAcceptAndStart(); // InProgress
+      await expect(contract.connect(client).cancel(1))
+        .to.be.revertedWithCustomError(contract, "InvalidStatus");
+    });
+
+    it("refuse un accord deja annule", async function () {
+      await create();
+      await contract.connect(client).cancel(1);
+      await expect(contract.connect(client).cancel(1))
+        .to.be.revertedWithCustomError(contract, "InvalidStatus");
+    });
+  });
+
+  describe("cancelOverdue", function () {
+    it("le client annule un accord InProgress apres l'echeance", async function () {
+      await createAcceptAndStart();
+      await time.increaseTo(deadline + 1);
+      await expect(contract.connect(client).cancelOverdue(1))
+        .to.emit(contract, "StatusChanged").withArgs(1, 2, 5); // InProgress -> Cancelled
+      expect((await contract.getAgreement(1)).status).to.equal(5n);
+    });
+
+    it("le client annule un accord Accepted jamais demarre apres l'echeance", async function () {
+      await createAndAccept();
+      await time.increaseTo(deadline + 1);
+      await expect(contract.connect(client).cancelOverdue(1))
+        .to.emit(contract, "StatusChanged").withArgs(1, 1, 5); // Accepted -> Cancelled
+    });
+
+    it("refuse un appelant autre que le client", async function () {
+      await createAcceptAndStart();
+      await time.increaseTo(deadline + 1);
+      await expect(contract.connect(freelancer).cancelOverdue(1))
+        .to.be.revertedWithCustomError(contract, "NotClient");
+    });
+
+    it("refuse tant que l'echeance n'est pas depassee", async function () {
+      await createAcceptAndStart();
+      await expect(contract.connect(client).cancelOverdue(1))
+        .to.be.revertedWithCustomError(contract, "DeadlineNotPassed");
+    });
+
+    it("refuse si le freelance a deja livre", async function () {
+      await createAcceptStartAndDeliver(); // Delivered : le client doit valider ou contester
+      await time.increaseTo(deadline + 1);
+      await expect(contract.connect(client).cancelOverdue(1))
+        .to.be.revertedWithCustomError(contract, "InvalidStatus");
+    });
+  });
+
   it("parcours complet : creation jusqu'a la validation", async function () {
     await create();
     await contract.connect(freelancer).acceptAgreement(1);
