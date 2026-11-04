@@ -84,4 +84,63 @@ describe("ServiceAgreement", function () {
       .to.be.revertedWithCustomError(contract, "InvalidStatus");
   });
   });
+  async function createAcceptAndStart() {
+    await createAndAccept();
+    await contract.connect(freelancer).startWork(1);
+  }
+
+  async function createAcceptStartAndDeliver() {
+    await createAcceptAndStart();
+    await contract.connect(freelancer).markDelivered(1);
+  }
+  describe("markDelivered", function () {
+    it("le freelance marque la livraison", async function () {
+      await createAcceptAndStart();
+      await expect(contract.connect(freelancer).markDelivered(1))
+        .to.emit(contract, "StatusChanged").withArgs(1, 2, 3); // InProgress -> Delivered
+      expect((await contract.getAgreement(1)).status).to.equal(3n);
+    });
+
+    it("refuse un appelant autre que le freelance", async function () {
+      await createAcceptAndStart();
+      await expect(contract.connect(client).markDelivered(1))
+        .to.be.revertedWithCustomError(contract, "NotFreelancer");
+    });
+
+    it("refuse si le travail n'a pas demarre", async function () {
+      await createAndAccept(); // statut Accepted, pas InProgress
+      await expect(contract.connect(freelancer).markDelivered(1))
+        .to.be.revertedWithCustomError(contract, "InvalidStatus");
+    });
+  });
+
+  describe("approveDelivery", function () {
+    it("le client valide la livraison", async function () {
+      await createAcceptStartAndDeliver();
+      await expect(contract.connect(client).approveDelivery(1))
+        .to.emit(contract, "StatusChanged").withArgs(1, 3, 4); // Delivered -> Completed
+      expect((await contract.getAgreement(1)).status).to.equal(4n);
+    });
+
+    it("refuse un appelant autre que le client", async function () {
+      await createAcceptStartAndDeliver();
+      await expect(contract.connect(freelancer).approveDelivery(1))
+        .to.be.revertedWithCustomError(contract, "NotClient");
+    });
+
+    it("refuse si rien n'a ete livre", async function () {
+      await createAcceptAndStart(); // InProgress, pas Delivered
+      await expect(contract.connect(client).approveDelivery(1))
+        .to.be.revertedWithCustomError(contract, "InvalidStatus");
+    });
+  });
+
+  it("parcours complet : creation jusqu'a la validation", async function () {
+    await create();
+    await contract.connect(freelancer).acceptAgreement(1);
+    await contract.connect(freelancer).startWork(1);
+    await contract.connect(freelancer).markDelivered(1);
+    await contract.connect(client).approveDelivery(1);
+    expect((await contract.getAgreement(1)).status).to.equal(4n); // Completed
+  });
 });

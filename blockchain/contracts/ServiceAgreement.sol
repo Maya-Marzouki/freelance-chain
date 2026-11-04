@@ -19,6 +19,7 @@ contract ServiceAgreement is IServiceAgreement {
     );
     event StatusChanged(uint256 indexed id, Status oldStatus, Status newStatus);
 
+    error NotClient();
     error NotFreelancer();
     error InvalidStatus(Status current);
     error AgreementNotFound();
@@ -59,23 +60,42 @@ contract ServiceAgreement is IServiceAgreement {
     function acceptAgreement(uint256 id) external {
         Agreement storage a = _get(id);
         if (msg.sender != a.freelancer) revert NotFreelancer();
-        if (a.status != Status.Created) revert InvalidStatus(a.status);
 
-        a.status = Status.Accepted;
-        emit StatusChanged(id, Status.Created, Status.Accepted);
+        _transition(id, a, Status.Created, Status.Accepted);
     }
 
     function startWork(uint256 id) external {
         Agreement storage a = _get(id);
         if (msg.sender != a.freelancer) revert NotFreelancer();
-        if (a.status != Status.Accepted) revert InvalidStatus(a.status);
 
-        a.status = Status.InProgress;
-        emit StatusChanged(id, Status.Accepted, Status.InProgress);
+        _transition(id, a, Status.Accepted, Status.InProgress);
+    }
+
+    function markDelivered(uint256 id) external {
+        Agreement storage a = _get(id);
+        if (msg.sender != a.freelancer) revert NotFreelancer();
+
+        _transition(id, a, Status.InProgress, Status.Delivered);
+    }
+
+    function approveDelivery(uint256 id) external {
+        Agreement storage a = _get(id);
+        if (msg.sender != a.client) revert NotClient();
+
+        _transition(id, a, Status.Delivered, Status.Completed);
     }
 
     function getAgreement(uint256 id) external view override returns (Agreement memory) {
         return _get(id);
+    }
+
+    /// @dev Verifie le statut courant, applique le nouveau statut et emet l'evenement.
+    ///      Le controle de l'appelant reste dans chaque fonction publique.
+    function _transition(uint256 id, Agreement storage a, Status expected, Status next) internal {
+        if (a.status != expected) revert InvalidStatus(a.status);
+
+        a.status = next;
+        emit StatusChanged(id, expected, next);
     }
 
     function _get(uint256 id) internal view returns (Agreement storage) {
