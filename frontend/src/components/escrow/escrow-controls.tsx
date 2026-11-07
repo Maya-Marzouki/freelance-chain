@@ -1,13 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { AlertOctagon, Banknote, Gavel, Scale, Undo2, Vault } from "lucide-react";
+import { Banknote, HandCoins, Undo2, Vault } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/modal";
 import { useAppStore } from "@/components/providers/app-store";
 import { useToast } from "@/components/providers/toast-provider";
-import { useWallet } from "@/components/wallet/wallet-provider";
-import { cn, formatEth, sameAddress } from "@/lib/utils";
+import { cn, formatEth } from "@/lib/utils";
 import type { Agreement, EscrowStatus, Role } from "@/types/agreement";
 import { CreateEscrowDialog } from "./create-escrow-dialog";
 
@@ -16,7 +15,6 @@ const STATUS_STYLE: Record<EscrowStatus, string> = {
   Funded: "bg-cyan-50 text-cyan-700 ring-cyan-100",
   InProgress: "bg-brand-50 text-brand-700 ring-brand-100",
   Completed: "bg-emerald-50 text-emerald-700 ring-emerald-100",
-  Disputed: "bg-rose-50 text-rose-700 ring-rose-100",
   Cancelled: "bg-slate-100 text-slate-500 ring-slate-200",
 };
 
@@ -45,8 +43,7 @@ interface Props {
 
 /** Live-mode controls of the escrow contract (B) for one agreement. */
 export function EscrowControls({ agreement, role }: Props) {
-  const { escrows, milestones, escrowEnabled, fundEscrow, refundEscrow, disputeEscrow, resolveEscrow } = useAppStore();
-  const wallet = useWallet();
+  const { escrows, escrowEnabled, fundEscrow, settleEscrow } = useAppStore();
   const toast = useToast();
   const [setupOpen, setSetupOpen] = useState(false);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
@@ -55,7 +52,6 @@ export function EscrowControls({ agreement, role }: Props) {
   if (!escrowEnabled) return null;
 
   const escrow = escrows.find((e) => e.agreementId === agreement.id);
-  const own = milestones.filter((m) => m.agreementId === agreement.id);
   const accepted = ["Accepted", "InProgress", "Delivered"].includes(agreement.status);
 
   async function confirm() {
@@ -89,9 +85,10 @@ export function EscrowControls({ agreement, role }: Props) {
       );
   } else {
     const id = escrow.escrowId;
-    const canRefund = role === "client" && escrow.releasedEth === 0 && own.every((m) => m.status === "Pending");
-    const isParty = role === "client" || role === "freelancer";
-    const isEscrowArbiter = sameAddress(wallet.address, escrow.arbiter);
+    const open = escrow.status === "Created" || escrow.status === "Funded" || escrow.status === "InProgress";
+    // B follows the final status of A: Completed pays the freelancer, Cancelled refunds the client.
+    const finished = agreement.status === "Completed" || agreement.status === "Cancelled";
+    const remaining = escrow.depositedEth - escrow.releasedEth;
     body = (
       <>
         <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -102,7 +99,7 @@ export function EscrowControls({ agreement, role }: Props) {
           </span>
         </div>
 
-        {escrow.status === "Created" &&
+        {escrow.status === "Created" && !finished &&
           (role === "client" ? (
             <>
               {note(accepted ? "Deposit the full amount to start. It stays locked until you approve each milestone." : "Wait for the freelancer to accept the agreement before funding.")}
@@ -126,88 +123,52 @@ export function EscrowControls({ agreement, role }: Props) {
             note("Waiting for the client to fund the escrow.")
           ))}
 
-        {(escrow.status === "Funded" || escrow.status === "InProgress") && isParty && (
-          <div className="flex flex-wrap gap-2">
-            {role === "client" && (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={!canRefund}
-                title={canRefund ? undefined : "A refund is only possible before any milestone is submitted"}
-                onClick={() =>
-                  setConfirmation({
-                    title: "Refund the escrow?",
-                    body: `${formatEth(escrow.depositedEth, 6)} will return to your wallet and the escrow will be cancelled.`,
-                    label: "Refund",
-                    danger: true,
-                    success: "Escrow refunded",
-                    run: () => refundEscrow(id),
-                  })
-                }
-              >
-                <Undo2 className="size-4" aria-hidden /> Refund
-              </Button>
+        {(escrow.status === "Funded" || escrow.status === "InProgress") && !finished && (
+          <>
+            {agreement.status === "Disputed"
+              ? note("Milestones are frozen while the agreement is disputed. The funds follow the outcome of the dispute.")
+              : note("Funds are released milestone by milestone. If the agreement is cancelled or completed, settle the escrow to move what is left.")}
+            {role === "client" && agreement.status === "Accepted" && note("To get a refund before work starts, cancel the agreement then settle the escrow.")}
+          </>
+        )}
+
+        {open && finished && (
+          <>
+            {note(
+              agreement.status === "Completed"
+                ? `The agreement is completed: the remaining ${formatEth(remaining, 6)} go to the freelancer.`
+                : `The agreement is cancelled: the remaining ${formatEth(remaining, 6)} return to the client.`,
             )}
             <Button
               size="sm"
-              variant="outline"
-              className="text-rose-600 hover:border-rose-200 hover:bg-rose-50"
+              variant={agreement.status === "Completed" ? "primary" : "outline"}
               onClick={() =>
                 setConfirmation({
-                  title: "Open an escrow dispute?",
-                  body: "The remaining funds are frozen until the arbiter rules in favour of the freelancer or the client.",
-                  label: "Open dispute",
-                  danger: true,
-                  success: "Escrow dispute opened",
-                  run: () => disputeEscrow(id),
+                  title: "Settle the escrow?",
+                  body:
+                    agreement.status === "Completed"
+                      ? `${formatEth(remaining, 6)} will be sent to the freelancer. Anyone can trigger this.`
+                      : `${formatEth(remaining, 6)} will be sent back to the client. Anyone can trigger this.`,
+                  label: "Settle escrow",
+                  success: "Escrow settled",
+                  run: () => settleEscrow(id),
                 })
               }
             >
-              <AlertOctagon className="size-4" aria-hidden /> Escrow dispute
+              {agreement.status === "Completed" ? (
+                <>
+                  <HandCoins className="size-4" aria-hidden /> Pay freelancer {formatEth(remaining, 6)}
+                </>
+              ) : (
+                <>
+                  <Undo2 className="size-4" aria-hidden /> Refund client {formatEth(remaining, 6)}
+                </>
+              )}
             </Button>
-          </div>
+          </>
         )}
 
-        {escrow.status === "Disputed" &&
-          (isEscrowArbiter ? (
-            <div className="flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                onClick={() =>
-                  setConfirmation({
-                    title: "Pay the freelancer?",
-                    body: `The remaining ${formatEth(escrow.depositedEth - escrow.releasedEth, 6)} go to the freelancer. This decision is final.`,
-                    label: "Pay freelancer",
-                    success: "Escrow resolved for the freelancer",
-                    run: () => resolveEscrow(id, true),
-                  })
-                }
-              >
-                <Gavel className="size-4" aria-hidden /> Pay freelancer
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="text-rose-600 hover:border-rose-200 hover:bg-rose-50"
-                onClick={() =>
-                  setConfirmation({
-                    title: "Refund the client?",
-                    body: `The remaining ${formatEth(escrow.depositedEth - escrow.releasedEth, 6)} return to the client. This decision is final.`,
-                    label: "Refund client",
-                    danger: true,
-                    success: "Escrow resolved for the client",
-                    run: () => resolveEscrow(id, false),
-                  })
-                }
-              >
-                <Scale className="size-4" aria-hidden /> Refund client
-              </Button>
-            </div>
-          ) : (
-            note("Funds are frozen. The arbiter must rule on this escrow.")
-          ))}
-
-        {escrow.status === "Completed" && note("All funds were released.")}
+        {escrow.status === "Completed" && note("All funds were released to the freelancer.")}
         {escrow.status === "Cancelled" && note("The escrow is closed. Remaining funds went back to the client.")}
       </>
     );

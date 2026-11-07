@@ -2,16 +2,23 @@ const fs = require("fs");
 const path = require("path");
 const hre = require("hardhat");
 
-// Les contrats a deployer. Le binome ajoute ici son contrat (ex: "EscrowMilestones").
-const CONTRACTS = ["ServiceAgreement", "EscrowMilestones"];
+// Contrats a deployer, dans l'ordre. `args` recoit les adresses deja deployees.
+// EscrowMilestones lit ServiceAgreement : il est deploye apres lui et recoit son adresse.
+const CONTRACTS = [
+  { name: "ServiceAgreement", args: () => [] },
+  { name: "EscrowMilestones", args: (deployed) => [deployed.ServiceAgreement] },
+];
+
 async function main() {
   const outDir = path.join(__dirname, "..", "..", "frontend", "src", "contracts");
   fs.mkdirSync(outDir, { recursive: true });
 
-  for (const name of CONTRACTS) {
-    const contract = await hre.ethers.deployContract(name);
+  const deployed = {};
+  for (const { name, args } of CONTRACTS) {
+    const contract = await hre.ethers.deployContract(name, args(deployed));
     await contract.waitForDeployment();
     const address = await contract.getAddress();
+    deployed[name] = address;
     console.log(`${name} deploye a ${address}`);
 
     const artifact = await hre.artifacts.readArtifact(name);

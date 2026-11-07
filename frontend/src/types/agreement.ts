@@ -21,12 +21,6 @@ export type Role = "client" | "freelancer" | "observer";
 /** Roles a demo user can impersonate in the simulated UI. */
 export type DemoRole = Exclude<Role, "observer">;
 
-/**
- * Role selectable in the demo role switcher. The arbiter is not a party to the
- * agreement: on-chain it is a single address set when the contract is deployed.
- */
-export type ViewRole = Role | "arbiter";
-
 export interface Party {
   name: string;
   address: string;
@@ -42,6 +36,21 @@ export interface AgreementEvent {
   /** Simulated transaction hash – never a real on-chain transaction. */
   txHash: string;
   note?: string;
+}
+
+/**
+ * Context of a dispute. No arbiter: the contract ends it either when a party
+ * concedes or, after the window, by an automatic rule anyone can trigger.
+ */
+export interface DisputeInfo {
+  raisedBy: string;
+  /** Status when the dispute was opened: decides the automatic ruling. */
+  openedFrom: "InProgress" | "Delivered";
+  openedAt: string; // ISO
+  /** From this date anyone can apply the automatic ruling. */
+  windowEndsAt: string; // ISO
+  /** Outcome of the automatic ruling: true = Completed, false = Cancelled. */
+  freelancerWinsByDefault: boolean;
 }
 
 export interface Agreement {
@@ -63,6 +72,8 @@ export interface Agreement {
   termsHash: string;
   documentName?: string;
   timeline: AgreementEvent[];
+  /** Present when the agreement was ever disputed (live mode). */
+  dispute?: DisputeInfo;
 }
 
 /** Mirrors `EscrowMilestones.MilestoneStatus`; the demo flow never uses "Approved". */
@@ -84,7 +95,7 @@ export interface Milestone {
 /**
  * Status order mirrors the Solidity enum `EscrowMilestones.EscrowStatus`.
  */
-export const ESCROW_STATUSES = ["Created", "Funded", "InProgress", "Completed", "Disputed", "Cancelled"] as const;
+export const ESCROW_STATUSES = ["Created", "Funded", "InProgress", "Completed", "Cancelled"] as const;
 export type EscrowStatus = (typeof ESCROW_STATUSES)[number];
 
 /** Funds held by `EscrowMilestones` for one agreement (live mode only). */
@@ -96,7 +107,6 @@ export interface Escrow {
   agreementId: string;
   client: string;
   freelancer: string;
-  arbiter: string;
   totalEth: number;
   depositedEth: number;
   releasedEth: number;
@@ -137,8 +147,9 @@ export type AgreementAction =
   | "dispute"
   | "cancel"
   | "cancelOverdue"
-  | "resolveForFreelancer"
-  | "resolveForClient";
+  | "concedeAsClient"
+  | "concedeAsFreelancer"
+  | "resolveDispute";
 
 /** Payload produced by the create-agreement form. */
 export interface CreateAgreementInput {

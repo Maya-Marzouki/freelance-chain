@@ -50,7 +50,7 @@ export function EscrowView() {
       const total = chainEscrows.reduce((s, e) => s + e.totalEth, 0);
       const released = chainEscrows.reduce((s, e) => s + e.releasedEth, 0);
       const locked = chainEscrows
-        .filter((e) => ["Funded", "InProgress", "Disputed"].includes(e.status))
+        .filter((e) => ["Funded", "InProgress"].includes(e.status))
         .reduce((s, e) => s + e.depositedEth - e.releasedEth, 0);
       const awaiting = milestones.filter((m) => m.status === "Submitted").reduce((s, m) => s + m.amountEth, 0);
       return { total, released, locked, awaiting };
@@ -272,8 +272,8 @@ export function EscrowView() {
                                         ? "Frozen by dispute"
                                         : escrowStatus === "Created"
                                           ? "Escrow not funded yet"
-                                          : escrowStatus === "Disputed" || escrowStatus === "Cancelled"
-                                            ? "Escrow frozen or closed"
+                                          : escrowStatus === "Cancelled" || escrowStatus === "Completed"
+                                            ? "Escrow closed"
                                             : "Freelancer to submit"}
                               </span>
                             )}

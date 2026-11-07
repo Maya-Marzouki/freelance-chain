@@ -17,7 +17,7 @@ import {
   chainErrorMessage,
   createOnChain,
   readAgreements,
-  readArbiter,
+  readChainTime,
   sendAction,
 } from "@/lib/agreement-chain";
 import { getServiceAgreementReader } from "@/lib/agreement-contract";
@@ -25,16 +25,14 @@ import {
   createEscrowOnChain,
   escrowErrorMessage,
   fundEscrowOnChain,
-  raiseEscrowDisputeOnChain,
   readEscrows,
-  refundEscrowOnChain,
   releaseMilestoneOnChain,
-  resolveEscrowDisputeOnChain,
+  settleEscrowOnChain,
   submitMilestoneOnChain,
 } from "@/lib/escrow-chain";
 import { getEscrowContract, getEscrowReader, isEscrowDeployed } from "@/lib/escrow-contract";
-import { ACTIONS, NEXT_MILESTONE_STATUS, type MilestoneAction } from "@/lib/lifecycle";
-import { DEMO_USER, MOCK_AGREEMENTS, MOCK_MILESTONES, buildActivityFeed } from "@/lib/mock-data";
+import { ACTIONS, NEXT_MILESTONE_STATUS, actionTarget, type MilestoneAction } from "@/lib/lifecycle";
+import { DEMO_USER, MOCK_AGREEMENTS, MOCK_MILESTONES, MOCK_NOW, buildActivityFeed } from "@/lib/mock-data";
 import { HARDHAT_CHAIN_ID, getServiceAgreementContract, hashTerms, isContractDeployed } from "@/lib/ethereum";
 import { randomHex, sameAddress, sleep } from "@/lib/utils";
 import type {
@@ -42,6 +40,7 @@ import type {
   Agreement,
   AgreementAction,
   AgreementEvent,
+  AgreementStatus,
   CreateAgreementInput,
   Escrow,
   EscrowMilestoneInput,
@@ -59,7 +58,7 @@ interface State {
 
 type Event =
   | { type: "create"; agreement: Agreement }
-  | { type: "transition"; id: string; action: AgreementAction; event: AgreementEvent }
+  | { type: "transition"; id: string; action: AgreementAction; to: AgreementStatus; event: AgreementEvent }
   | { type: "milestone"; id: string; action: MilestoneAction; item: ActivityItem };
 
 function reducer(state: State, e: Event): State {
@@ -70,7 +69,7 @@ function reducer(state: State, e: Event): State {
       return {
         ...state,
         agreements: state.agreements.map((a) =>
-          a.id === e.id ? { ...a, status: ACTIONS[e.action].to, timeline: [...a.timeline, e.event] } : a,
+          a.id === e.id ? { ...a, status: e.to, timeline: [...a.timeline, e.event] } : a,
         ),
         milestones:
           e.action === "approve"
@@ -95,8 +94,11 @@ interface StoreValue extends State {
   mode: StoreMode;
   chainStatus: ChainStatus;
   chainError: string | null;
-  /** Address allowed to resolve disputes (chain mode only). */
-  arbiterAddress: string | null;
+  /**
+   * "Now" for deadlines and dispute windows, in ms: the latest block time in live mode
+   * (the clock the contracts use), a fixed date in demo mode.
+   */
+  nowMs: number;
   /** Reloads agreements and escrows from the blockchain (no-op in demo mode). */
   refresh: () => Promise<void>;
   /** Escrows read from `EscrowMilestones` (live mode only). */
@@ -106,9 +108,8 @@ interface StoreValue extends State {
   /** Creates the escrow of an agreement; the total of the milestones must equal its amount. */
   createEscrow: (agreementId: string, milestones: EscrowMilestoneInput[]) => Promise<string>;
   fundEscrow: (escrowId: number) => Promise<string>;
-  refundEscrow: (escrowId: number) => Promise<string>;
-  disputeEscrow: (escrowId: number) => Promise<string>;
-  resolveEscrow: (escrowId: number, favorFreelancer: boolean) => Promise<string>;
+  /** Pays the freelancer or refunds the client once the agreement is Completed or Cancelled. */
+  settleEscrow: (escrowId: number) => Promise<string>;
   user: Party;
   activity: ActivityItem[];
   getAgreement: (id: string) => Agreement | undefined;
@@ -144,7 +145,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     status: ChainStatus;
     error: string | null;
     agreements: Agreement[];
-    arbiter: string | null;
+    now: number;
     escrowReady: boolean;
     escrows: Escrow[];
     milestones: Milestone[];
@@ -154,7 +155,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     status: "idle",
     error: null,
     agreements: [],
-    arbiter: null,
+    now: 0,
     escrowReady: false,
     escrows: [],
     milestones: [],
@@ -164,7 +165,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   const loadChain = useCallback(async (): Promise<Agreement[]> => {
     const { contract, provider } = getServiceAgreementReader();
     try {
-      const [agreements, arbiter] = await Promise.all([readAgreements(contract, provider), readArbiter(contract)]);
+      const [agreements, now] = await Promise.all([readAgreements(contract, provider), readChainTime(provider)]);
       // The escrow contract is optional: agreements keep working if it is missing.
       let escrowPart = { escrowReady: false, escrows: [] as Escrow[], milestones: [] as Milestone[], activity: [] as ActivityItem[] };
       if (isEscrowDeployed) {
@@ -175,7 +176,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
           /* escrow contract not reachable at the saved address */
         }
       }
-      setChain({ status: "ready", error: null, agreements, arbiter, ...escrowPart });
+      setChain({ status: "ready", error: null, agreements, now, ...escrowPart });
       return agreements;
     } catch (err) {
       setChain((c) => ({ ...c, status: "error", error: chainErrorMessage(err, contract) }));
@@ -305,10 +306,11 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       actor,
       txHash: randomHex(),
     };
-    dispatch({ type: "transition", id: agreementId, action, event });
+    const current = state.agreements.find((a) => a.id === agreementId);
+    dispatch({ type: "transition", id: agreementId, action, to: current ? actionTarget(action, current) : ACTIONS[action].to, event });
     return event;
     },
-    [chainMode, agreements, wallet.address, loadChain],
+    [chainMode, agreements, wallet.address, loadChain, state.agreements],
   );
 
   /** Runs an escrow transaction, then reloads the chain. Errors are translated for the user. */
@@ -336,24 +338,18 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       if (!sameAddress(agreement.client.address, wallet.address)) {
         throw new Error("Only the client of the agreement can set up its escrow.");
       }
-      if (!chain.arbiter) throw new Error("The arbiter could not be read from the agreement contract.");
       if (chain.escrows.some((e) => e.agreementId === agreementId)) throw new Error("This agreement already has an escrow.");
       const total = input.reduce((sum, m) => sum + m.amountEth, 0);
       if (Math.abs(total - agreement.amountEth) > 1e-9) {
         throw new Error(`The milestones must add up to the agreement amount (${agreement.amountEth} ETH).`);
       }
-      return withEscrow(async (contract) => (await createEscrowOnChain(contract, agreement, chain.arbiter!, input)).txHash);
+      return withEscrow(async (contract) => (await createEscrowOnChain(contract, agreement, input)).txHash);
     },
-    [agreements, wallet.address, chain.arbiter, chain.escrows, withEscrow],
+    [agreements, wallet.address, chain.escrows, withEscrow],
   );
 
   const fundEscrow = useCallback((id: number) => withEscrow((c) => fundEscrowOnChain(c, id)), [withEscrow]);
-  const refundEscrow = useCallback((id: number) => withEscrow((c) => refundEscrowOnChain(c, id)), [withEscrow]);
-  const disputeEscrow = useCallback((id: number) => withEscrow((c) => raiseEscrowDisputeOnChain(c, id)), [withEscrow]);
-  const resolveEscrow = useCallback(
-    (id: number, favorFreelancer: boolean) => withEscrow((c) => resolveEscrowDisputeOnChain(c, id, favorFreelancer)),
-    [withEscrow],
-  );
+  const settleEscrow = useCallback((id: number) => withEscrow((c) => settleEscrowOnChain(c, id)), [withEscrow]);
 
   const performMilestoneAction = useCallback(
     async (milestoneId: string, action: MilestoneAction, actor: string) => {
@@ -412,15 +408,13 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       mode,
       chainStatus,
       chainError: chainMode ? chain.error : null,
-      arbiterAddress: chainMode ? chain.arbiter : null,
+      nowMs: chainMode ? chain.now : new Date(MOCK_NOW).getTime(),
       refresh,
       escrows,
       escrowEnabled,
       createEscrow,
       fundEscrow,
-      refundEscrow,
-      disputeEscrow,
-      resolveEscrow,
+      settleEscrow,
       user: DEMO_USER,
       activity,
       getAgreement,
@@ -437,15 +431,13 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       chainMode,
       chainStatus,
       chain.error,
-      chain.arbiter,
+      chain.now,
       refresh,
       escrows,
       escrowEnabled,
       createEscrow,
       fundEscrow,
-      refundEscrow,
-      disputeEscrow,
-      resolveEscrow,
+      settleEscrow,
       activity,
       getAgreement,
       roleFor,

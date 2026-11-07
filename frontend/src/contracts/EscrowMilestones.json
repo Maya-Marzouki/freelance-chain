@@ -2,47 +2,20 @@
   "address": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
   "abi": [
     {
-      "inputs": [],
-      "name": "ReentrancyGuardReentrantCall",
-      "type": "error"
-    },
-    {
-      "anonymous": false,
       "inputs": [
         {
-          "indexed": true,
-          "internalType": "uint256",
-          "name": "escrowId",
-          "type": "uint256"
-        },
-        {
-          "indexed": false,
-          "internalType": "address",
-          "name": "raisedBy",
+          "internalType": "contract IServiceAgreement",
+          "name": "agreementContract",
           "type": "address"
         }
       ],
-      "name": "DisputeRaised",
-      "type": "event"
+      "stateMutability": "nonpayable",
+      "type": "constructor"
     },
     {
-      "anonymous": false,
-      "inputs": [
-        {
-          "indexed": true,
-          "internalType": "uint256",
-          "name": "escrowId",
-          "type": "uint256"
-        },
-        {
-          "indexed": false,
-          "internalType": "bool",
-          "name": "freelancerPaid",
-          "type": "bool"
-        }
-      ],
-      "name": "DisputeResolved",
-      "type": "event"
+      "inputs": [],
+      "name": "ReentrancyGuardReentrantCall",
+      "type": "error"
     },
     {
       "anonymous": false,
@@ -79,6 +52,31 @@
         }
       ],
       "name": "EscrowCreated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "escrowId",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "bool",
+          "name": "freelancerPaid",
+          "type": "bool"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "EscrowSettled",
       "type": "event"
     },
     {
@@ -170,29 +168,17 @@
       "type": "event"
     },
     {
-      "anonymous": false,
-      "inputs": [
+      "inputs": [],
+      "name": "agreements",
+      "outputs": [
         {
-          "indexed": true,
-          "internalType": "uint256",
-          "name": "escrowId",
-          "type": "uint256"
-        },
-        {
-          "indexed": false,
-          "internalType": "address",
-          "name": "client",
+          "internalType": "contract IServiceAgreement",
+          "name": "",
           "type": "address"
-        },
-        {
-          "indexed": false,
-          "internalType": "uint256",
-          "name": "amount",
-          "type": "uint256"
         }
       ],
-      "name": "RefundIssued",
-      "type": "event"
+      "stateMutability": "view",
+      "type": "function"
     },
     {
       "inputs": [
@@ -218,16 +204,6 @@
           "internalType": "uint256",
           "name": "agreementId",
           "type": "uint256"
-        },
-        {
-          "internalType": "address payable",
-          "name": "freelancer",
-          "type": "address"
-        },
-        {
-          "internalType": "address",
-          "name": "arbiter",
-          "type": "address"
         },
         {
           "internalType": "uint256[]",
@@ -282,6 +258,25 @@
           "type": "uint256"
         }
       ],
+      "name": "escrowOfAgreement",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
       "name": "escrows",
       "outputs": [
         {
@@ -302,11 +297,6 @@
         {
           "internalType": "address payable",
           "name": "freelancer",
-          "type": "address"
-        },
-        {
-          "internalType": "address",
-          "name": "arbiter",
           "type": "address"
         },
         {
@@ -368,11 +358,6 @@
             {
               "internalType": "address payable",
               "name": "freelancer",
-              "type": "address"
-            },
-            {
-              "internalType": "address",
-              "name": "arbiter",
               "type": "address"
             },
             {
@@ -510,32 +495,6 @@
           "internalType": "uint256",
           "name": "escrowId",
           "type": "uint256"
-        }
-      ],
-      "name": "raiseDispute",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint256",
-          "name": "escrowId",
-          "type": "uint256"
-        }
-      ],
-      "name": "refund",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint256",
-          "name": "escrowId",
-          "type": "uint256"
         },
         {
           "internalType": "uint256",
@@ -554,14 +513,9 @@
           "internalType": "uint256",
           "name": "escrowId",
           "type": "uint256"
-        },
-        {
-          "internalType": "bool",
-          "name": "freelancerPaid",
-          "type": "bool"
         }
       ],
-      "name": "resolveDispute",
+      "name": "settle",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"

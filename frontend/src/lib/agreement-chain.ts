@@ -15,6 +15,7 @@ import {
   type AgreementEvent,
   type AgreementStatus,
   type CreateAgreementInput,
+  type DisputeInfo,
   type Party,
 } from "@/types/agreement";
 
@@ -38,7 +39,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   NotClient: "Only the client of this agreement can do this.",
   NotFreelancer: "Only the freelancer of this agreement can do this.",
   NotParty: "Only the client or the freelancer can do this.",
-  NotArbiter: "Only the arbiter can do this.",
+  DisputeWindowOpen: "The dispute window is still open. Either party can concede meanwhile.",
   InvalidStatus: "This action is not allowed in the agreement's current status.",
   DeadlineNotPassed: "The deadline has not passed yet.",
   AgreementNotFound: "This agreement does not exist on the connected blockchain.",
@@ -50,11 +51,15 @@ export function chainErrorMessage(err: unknown, contract?: Contract): string {
     code?: string | number;
     revert?: { name?: string };
     data?: string;
-    info?: { error?: { data?: string } };
+    info?: { error?: { data?: string; message?: string } };
     shortMessage?: string;
     message?: string;
   };
   if (e?.code === "ACTION_REJECTED" || e?.code === 4001) return "Transaction rejected in MetaMask.";
+  // Local dev: MetaMask remembers transactions of a previous node, so its counter is ahead of the new node's.
+  if (/nonce too (high|low)/i.test(`${e?.message ?? ""} ${e?.info?.error?.message ?? ""}`)) {
+    return "MetaMask's transaction counter is out of sync with the local node. In MetaMask: Settings > Developer tools > Clear activity and nonce data (for this account), then try again.";
+  }
   if (e?.code === "BAD_DATA") {
     return "No ServiceAgreement contract at the saved address on this network. Restart the Hardhat node, then run npm run deploy:local.";
   }
@@ -74,8 +79,10 @@ export function chainErrorMessage(err: unknown, contract?: Contract): string {
 
 /* ---------------------------------- Reads ---------------------------------- */
 
-export async function readArbiter(contract: Contract): Promise<string> {
-  return (await contract.arbiter()) as string;
+/** Timestamp (ms) of the latest block: the clock the contract uses for deadlines and dispute windows. */
+export async function readChainTime(provider: Provider): Promise<number> {
+  const block = await provider.getBlock("latest");
+  return Number(block?.timestamp ?? 0) * 1000;
 }
 
 /** Loads every agreement with its off-chain details and its event history. */
@@ -126,6 +133,23 @@ export async function readAgreements(contract: Contract, provider: Provider): Pr
     });
   }
 
+  // Dispute context (who opened it, when the window ends, what the automatic rule gives).
+  const disputes = new Map<number, DisputeInfo>();
+  await Promise.all(
+    structs
+      .filter((a) => statusOf(a.status) === "Disputed")
+      .map(async (a) => {
+        const d = await contract.getDispute(a.id);
+        disputes.set(Number(a.id), {
+          raisedBy: d.raisedBy,
+          openedFrom: statusOf(d.openedFrom) === "Delivered" ? "Delivered" : "InProgress",
+          openedAt: new Date(Number(d.openedAt) * 1000).toISOString(),
+          windowEndsAt: new Date(Number(d.windowEndsAt) * 1000).toISOString(),
+          freelancerWinsByDefault: d.freelancerWinsByDefault as boolean,
+        });
+      }),
+  );
+
   const creationTx = new Map(created.map((l) => [Number((l as unknown as { args: { id: bigint } }).args.id), l.transactionHash]));
 
   return structs
@@ -151,6 +175,7 @@ export async function readAgreements(contract: Contract, provider: Provider): Pr
         termsHash: a.termsHash,
         documentName: meta?.documentName,
         timeline: events,
+        dispute: disputes.get(id),
       };
     })
     .sort((a, b) => b.onChainId - a.onChainId);
@@ -207,11 +232,12 @@ export async function sendAction(contract: Contract, action: AgreementAction, on
     case "dispute":
       tx = await contract.raiseDispute(onChainId);
       break;
-    case "resolveForFreelancer":
-      tx = await contract.resolveDispute(onChainId, true);
+    case "concedeAsClient":
+    case "concedeAsFreelancer":
+      tx = await contract.concede(onChainId); // the contract decides the outcome from the caller
       break;
-    case "resolveForClient":
-      tx = await contract.resolveDispute(onChainId, false);
+    case "resolveDispute":
+      tx = await contract.resolveDispute(onChainId);
       break;
   }
   await tx.wait();

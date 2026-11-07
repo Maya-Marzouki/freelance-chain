@@ -12,9 +12,8 @@ import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { useAppStore } from "@/components/providers/app-store";
 import { EscrowControls } from "@/components/escrow/escrow-controls";
 import { useWallet } from "@/components/wallet/wallet-provider";
-import { MOCK_NOW } from "@/lib/mock-data";
 import { daysBetween, formatDate, formatDateTime, formatEth, formatUsd } from "@/lib/utils";
-import type { Agreement, Party, Role, ViewRole } from "@/types/agreement";
+import type { Agreement, Party, Role } from "@/types/agreement";
 import { AgreementActions } from "./agreement-actions";
 import { LifecycleStepper } from "./lifecycle-stepper";
 
@@ -122,9 +121,9 @@ function AgreementDetailsContent({
   actualRole: Role;
   milestones: ReturnType<typeof useAppStore>["milestones"];
 }) {
-  const { mode, escrowEnabled } = useAppStore();
-  const [role, setRole] = useState<ViewRole>(actualRole);
-  const [now] = useState(() => (mode === "chain" ? new Date().toISOString() : MOCK_NOW));
+  const { mode, escrowEnabled, nowMs } = useAppStore();
+  const [role, setRole] = useState<Role>(actualRole);
+  const now = new Date(nowMs).toISOString();
   const milestones = allMilestones.filter((m) => m.agreementId === agreement.id);
   const released = milestones.filter((m) => m.status === "Released").reduce((s, m) => s + m.amountEth, 0);
   const daysLeft = daysBetween(now, agreement.deadline);

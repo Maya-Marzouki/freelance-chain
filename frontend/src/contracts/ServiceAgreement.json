@@ -3,17 +3,23 @@
   "abi": [
     {
       "inputs": [],
-      "stateMutability": "nonpayable",
-      "type": "constructor"
-    },
-    {
-      "inputs": [],
       "name": "AgreementNotFound",
       "type": "error"
     },
     {
       "inputs": [],
       "name": "DeadlineNotPassed",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "endsAt",
+          "type": "uint256"
+        }
+      ],
+      "name": "DisputeWindowOpen",
       "type": "error"
     },
     {
@@ -30,11 +36,6 @@
         }
       ],
       "name": "InvalidStatus",
-      "type": "error"
-    },
-    {
-      "inputs": [],
-      "name": "NotArbiter",
       "type": "error"
     },
     {
@@ -88,6 +89,31 @@
         },
         {
           "indexed": false,
+          "internalType": "bool",
+          "name": "favorFreelancer",
+          "type": "bool"
+        },
+        {
+          "indexed": false,
+          "internalType": "bool",
+          "name": "byDefault",
+          "type": "bool"
+        }
+      ],
+      "name": "DisputeResolved",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "id",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
           "internalType": "enum IServiceAgreement.Status",
           "name": "oldStatus",
           "type": "uint8"
@@ -101,6 +127,19 @@
       ],
       "name": "StatusChanged",
       "type": "event"
+    },
+    {
+      "inputs": [],
+      "name": "DISPUTE_WINDOW",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
     },
     {
       "inputs": [
@@ -142,19 +181,6 @@
       "type": "function"
     },
     {
-      "inputs": [],
-      "name": "arbiter",
-      "outputs": [
-        {
-          "internalType": "address",
-          "name": "",
-          "type": "address"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
       "inputs": [
         {
           "internalType": "uint256",
@@ -176,6 +202,19 @@
         }
       ],
       "name": "cancelOverdue",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "id",
+          "type": "uint256"
+        }
+      ],
+      "name": "concede",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"
@@ -217,6 +256,25 @@
         }
       ],
       "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "name": "deliveredAt",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
       "type": "function"
     },
     {
@@ -288,6 +346,45 @@
           "type": "uint256"
         }
       ],
+      "name": "getDispute",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "raisedBy",
+          "type": "address"
+        },
+        {
+          "internalType": "enum IServiceAgreement.Status",
+          "name": "openedFrom",
+          "type": "uint8"
+        },
+        {
+          "internalType": "uint256",
+          "name": "openedAt",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "windowEndsAt",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bool",
+          "name": "freelancerWinsByDefault",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "id",
+          "type": "uint256"
+        }
+      ],
       "name": "markDelivered",
       "outputs": [],
       "stateMutability": "nonpayable",
@@ -312,11 +409,6 @@
           "internalType": "uint256",
           "name": "id",
           "type": "uint256"
-        },
-        {
-          "internalType": "bool",
-          "name": "favorFreelancer",
-          "type": "bool"
         }
       ],
       "name": "resolveDispute",

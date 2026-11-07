@@ -9,7 +9,8 @@
     "node": "npm --prefix blockchain run node",
     "deploy:local": "npm --prefix blockchain run deploy:local",
     "dev": "npm --prefix frontend run dev",
-    "build": "npm --prefix frontend run build"
+    "build": "npm --prefix frontend run build",
+    "time:skip": "npm --prefix blockchain run time:skip --"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^6.1.2"

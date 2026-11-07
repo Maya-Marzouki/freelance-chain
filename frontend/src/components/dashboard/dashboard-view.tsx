@@ -31,7 +31,7 @@ export function DashboardView() {
     const tvl =
       mode === "chain"
         ? escrows
-            .filter((e) => ["Funded", "InProgress", "Disputed"].includes(e.status))
+            .filter((e) => ["Funded", "InProgress"].includes(e.status))
             .reduce((sum, e) => sum + e.depositedEth - e.releasedEth, 0)
         : lockedAgreements.reduce((sum, a) => {
             const released = milestones

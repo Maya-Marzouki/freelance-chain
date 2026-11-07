@@ -6,12 +6,12 @@ import {
   Ban,
   BadgeCheck,
   Clock,
+  Flag,
   Gavel,
   Handshake,
   Info,
   PackageCheck,
   Play,
-  Scale,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -21,10 +21,16 @@ import { Segmented } from "@/components/ui/misc";
 import { useAppStore } from "@/components/providers/app-store";
 import { useToast } from "@/components/providers/toast-provider";
 import { useWallet } from "@/components/wallet/wallet-provider";
-import { ACTIONS, availableActions, waitingMessage, type ActionDefinition } from "@/lib/lifecycle";
-import { MOCK_NOW, mockAddress } from "@/lib/mock-data";
-import { formatEth, sameAddress, shortenAddress } from "@/lib/utils";
-import type { Agreement, AgreementAction, Role, ViewRole } from "@/types/agreement";
+import {
+  ACTIONS,
+  actionTarget,
+  availableActions,
+  defaultRuling,
+  waitingMessage,
+  type ActionDefinition,
+} from "@/lib/lifecycle";
+import { formatDateTime, formatEth, shortenAddress } from "@/lib/utils";
+import type { Agreement, AgreementAction, Role } from "@/types/agreement";
 
 const ICONS: Record<AgreementAction, LucideIcon> = {
   accept: Handshake,
@@ -34,52 +40,44 @@ const ICONS: Record<AgreementAction, LucideIcon> = {
   dispute: AlertOctagon,
   cancel: Ban,
   cancelOverdue: Clock,
-  resolveForFreelancer: Gavel,
-  resolveForClient: Scale,
+  concedeAsClient: Flag,
+  concedeAsFreelancer: Flag,
+  resolveDispute: Gavel,
 };
 
-const ROLE_LABEL: Record<ViewRole, string> = {
+const ROLE_LABEL: Record<Role, string> = {
   client: "Client",
   freelancer: "Freelancer",
   observer: "Observer",
-  arbiter: "Arbiter",
 };
-
-/** Placeholder address for the simulated arbiter in demo mode. */
-const DEMO_ARBITER = mockAddress("arbiter");
 
 interface Props {
   agreement: Agreement;
   /** Role derived from the user's identity. */
   actualRole: Role;
-  role: ViewRole;
-  onRoleChange: (role: ViewRole) => void;
+  role: Role;
+  onRoleChange: (role: Role) => void;
 }
 
 export function AgreementActions({ agreement, actualRole, role, onRoleChange }: Props) {
-  const { performAction, mode, arbiterAddress } = useAppStore();
+  const { performAction, mode, nowMs } = useAppStore();
   const wallet = useWallet();
   const toast = useToast();
   const [pending, setPending] = useState<ActionDefinition | null>(null);
   const [loading, setLoading] = useState(false);
-  const [now] = useState(() => (mode === "chain" ? Date.now() : new Date(MOCK_NOW).getTime()));
 
   const live = mode === "chain";
   // On-chain the role comes from the wallet and cannot be simulated.
-  const viewRole: ViewRole = live ? actualRole : role;
-  const isArbiter = live ? sameAddress(wallet.address, arbiterAddress) : viewRole === "arbiter";
-  const lifecycleRole: Role = viewRole === "arbiter" ? "observer" : viewRole;
+  const viewRole: Role = live ? actualRole : role;
+  const dispute = agreement.dispute;
+  // Demo disputes carry no window: the automatic ruling is available right away.
+  const windowElapsed = dispute ? nowMs >= new Date(dispute.windowEndsAt).getTime() : true;
 
-  const actions = availableActions(lifecycleRole, agreement.status, {
-    deadlinePassed: now > new Date(agreement.deadline).getTime(),
-    isArbiter,
+  const actions = availableActions(viewRole, agreement.status, {
+    deadlinePassed: nowMs > new Date(agreement.deadline).getTime(),
+    disputeWindowElapsed: windowElapsed,
   });
-  const actor =
-    viewRole === "arbiter"
-      ? DEMO_ARBITER
-      : viewRole === "client"
-        ? agreement.client.address
-        : agreement.freelancer.address;
+  const actor = viewRole === "freelancer" ? agreement.freelancer.address : agreement.client.address;
 
   async function confirm() {
     if (!pending) return;
@@ -100,7 +98,7 @@ export function AgreementActions({ agreement, actualRole, role, onRoleChange }: 
 
   const primary = actions.filter((a) => a.tone !== "danger");
   const danger = actions.filter((a) => a.tone === "danger");
-  const waiting = waitingMessage(lifecycleRole, agreement.status, isArbiter);
+  const waiting = waitingMessage(viewRole, agreement.status);
 
   return (
     <Card>
@@ -113,15 +111,10 @@ export function AgreementActions({ agreement, actualRole, role, onRoleChange }: 
               {wallet.address ? shortenAddress(wallet.address, 6) : "—"}
             </p>
             <p className="mt-1.5 text-xs text-slate-500">
-              You are the{" "}
-              <span className="font-medium text-navy-900">
-                {[ROLE_LABEL[actualRole].toLowerCase(), isArbiter ? "arbiter" : null]
-                  .filter((r) => r && r !== "observer")
-                  .join(" and ") || "observer"}
-              </span>{" "}
-              on this agreement. Switch account in MetaMask to act as another party.
+              You are the <span className="font-medium text-navy-900">{ROLE_LABEL[actualRole].toLowerCase()}</span> on
+              this agreement. Switch account in MetaMask to act as another party.
             </p>
-            {actualRole === "observer" && !isArbiter && (
+            {actualRole === "observer" && (
               <p className="mt-1.5 text-xs text-amber-700">
                 This wallet is not a party. Client: {shortenAddress(agreement.client.address, 6)} · Freelancer:{" "}
                 {shortenAddress(agreement.freelancer.address, 6)}. Select that account in MetaMask and connect it to
@@ -140,7 +133,6 @@ export function AgreementActions({ agreement, actualRole, role, onRoleChange }: 
               options={[
                 { value: "client", label: "Client" },
                 { value: "freelancer", label: "Freelancer" },
-                { value: "arbiter", label: "Arbiter" },
                 { value: "observer", label: "Observer" },
               ]}
             />
@@ -150,6 +142,36 @@ export function AgreementActions({ agreement, actualRole, role, onRoleChange }: 
               agreement.
               {role !== actualRole && " You are previewing another role (demo only)."}
             </p>
+          </div>
+        )}
+
+        {agreement.status === "Disputed" && (
+          <div className="rounded-xl border border-rose-100 bg-rose-50/60 p-3.5 text-sm text-slate-700">
+            <p className="font-medium text-rose-700">Dispute open: no arbiter, the contract decides</p>
+            <ul className="mt-1.5 list-disc space-y-1 pl-4 text-xs text-slate-600">
+              <li>Either party can concede at any time: the other one wins.</li>
+              <li>
+                {dispute
+                  ? windowElapsed
+                    ? "The dispute window is over: anyone can apply the automatic ruling."
+                    : `Automatic ruling available from ${formatDateTime(dispute.windowEndsAt)}.`
+                  : "After the dispute window, anyone can apply the automatic ruling."}
+              </li>
+              <li>
+                {dispute
+                  ? defaultRuling(agreement) === "Completed"
+                    ? "Rule: the work was delivered on time, so the freelancer would be paid."
+                    : dispute.openedFrom === "Delivered"
+                      ? "Rule: the delivery was late, so the client would be refunded."
+                      : "Rule: nothing was delivered, so the client would be refunded."
+                  : "Rule: the freelancer wins only if the work was delivered on time."}
+              </li>
+            </ul>
+            {dispute && (
+              <p className="mt-2 text-[11px] text-slate-500">
+                Opened {formatDateTime(dispute.openedAt)} by {shortenAddress(dispute.raisedBy, 5)}.
+              </p>
+            )}
           </div>
         )}
 
@@ -218,7 +240,7 @@ export function AgreementActions({ agreement, actualRole, role, onRoleChange }: 
             </div>
             <div className="flex justify-between gap-3">
               <dt className="text-slate-500">New status</dt>
-              <dd className="font-medium text-navy-900">{pending.to.replace("InProgress", "In Progress")}</dd>
+              <dd className="font-medium text-navy-900">{actionTarget(pending.action, agreement).replace("InProgress", "In Progress")}</dd>
             </div>
             {live ? (
               <p className="pt-1 text-xs text-slate-500">

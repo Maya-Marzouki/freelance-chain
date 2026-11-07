@@ -3,7 +3,13 @@
 pragma solidity ^0.8.28;
 
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "./IServiceAgreement.sol";
 
+/// @title EscrowMilestones
+/// @notice Contrat B : fonds bloques par jalons pour un accord du contrat A.
+/// @dev Aucun arbitre : l'accord (A) est la source de verite. Les jalons sont geles
+///      pendant un litige, puis `settle` paie le freelance si A est Completed et
+///      rembourse le client si A est Cancelled.
 contract EscrowMilestones is ReentrancyGuard {
 
     enum EscrowStatus {
@@ -11,7 +17,6 @@ contract EscrowMilestones is ReentrancyGuard {
         Funded,
         InProgress,
         Completed,
-        Disputed,
         Cancelled
     }
 
@@ -35,7 +40,6 @@ contract EscrowMilestones is ReentrancyGuard {
         uint256 agreementId;
         address payable client;
         address payable freelancer;
-        address arbiter;
         uint256 totalAmount;
         uint256 depositedAmount;
         uint256 releasedAmount;
@@ -43,12 +47,22 @@ contract EscrowMilestones is ReentrancyGuard {
         uint256 milestoneCount;
     }
 
+    IServiceAgreement public immutable agreements;
+
     uint256 private nextEscrowId = 1;
 
     mapping(uint256 => Escrow) public escrows;
 
     mapping(uint256 => mapping(uint256 => Milestone))
         public milestones;
+
+    /// @notice Escrow d'un accord (0 si aucun) : un seul escrow par accord.
+    mapping(uint256 => uint256) public escrowOfAgreement;
+
+    constructor(IServiceAgreement agreementContract) {
+        require(address(agreementContract) != address(0), "Invalid agreement contract");
+        agreements = agreementContract;
+    }
 
     event EscrowCreated(
         uint256 indexed escrowId,
@@ -80,19 +94,10 @@ contract EscrowMilestones is ReentrancyGuard {
         uint256 amount
     );
 
-    event DisputeRaised(
+    /// @param freelancerPaid true si l'accord est Completed, false s'il est Cancelled.
+    event EscrowSettled(
         uint256 indexed escrowId,
-        address raisedBy
-    );
-
-    event DisputeResolved(
-        uint256 indexed escrowId,
-        bool freelancerPaid
-    );
-
-    event RefundIssued(
-        uint256 indexed escrowId,
-        address client,
+        bool freelancerPaid,
         uint256 amount
     );
 
@@ -112,14 +117,6 @@ contract EscrowMilestones is ReentrancyGuard {
         _;
     }
 
-    modifier onlyArbiter(uint256 escrowId) {
-        require(
-            msg.sender == escrows[escrowId].arbiter,
-            "Only arbiter"
-        );
-        _;
-    }
-
     modifier escrowExists(uint256 escrowId) {
         require(
             escrows[escrowId].client != address(0),
@@ -130,17 +127,29 @@ contract EscrowMilestones is ReentrancyGuard {
 
     function createEscrow(
         uint256 agreementId,
-        address payable freelancer,
-        address arbiter,
         uint256[] calldata amounts,
         string[] calldata titles,
         string[] calldata descriptions,
         uint256[] calldata deadlines
     ) external returns (uint256) {
 
-        require(freelancer != address(0), "Invalid freelancer");
-        require(arbiter != address(0), "Invalid arbiter");
-        require(freelancer != msg.sender, "Invalid parties");
+        // Les parties et le montant viennent de l'accord : rien n'est saisi deux fois.
+        IServiceAgreement.Agreement memory agreement =
+            agreements.getAgreement(agreementId);
+
+        require(msg.sender == agreement.client, "Only client");
+
+        require(
+            agreement.status == IServiceAgreement.Status.Created ||
+            agreement.status == IServiceAgreement.Status.Accepted ||
+            agreement.status == IServiceAgreement.Status.InProgress,
+            "Agreement not open"
+        );
+
+        require(
+            escrowOfAgreement[agreementId] == 0,
+            "Escrow already exists"
+        );
 
         require(
             amounts.length > 0 &&
@@ -158,18 +167,21 @@ contract EscrowMilestones is ReentrancyGuard {
             total += amounts[i];
         }
 
+        require(total == agreement.amount, "Total must match agreement");
+
         uint256 escrowId = nextEscrowId++;
 
         Escrow storage escrow = escrows[escrowId];
 
         escrow.id = escrowId;
         escrow.agreementId = agreementId;
-        escrow.client = payable(msg.sender);
-        escrow.freelancer = freelancer;
-        escrow.arbiter = arbiter;
+        escrow.client = payable(agreement.client);
+        escrow.freelancer = payable(agreement.freelancer);
         escrow.totalAmount = total;
         escrow.status = EscrowStatus.Created;
         escrow.milestoneCount = amounts.length;
+
+        escrowOfAgreement[agreementId] = escrowId;
 
         for (uint256 i = 0; i < amounts.length; i++) {
             milestones[escrowId][i] = Milestone({
@@ -184,8 +196,8 @@ contract EscrowMilestones is ReentrancyGuard {
         emit EscrowCreated(
             escrowId,
             agreementId,
-            msg.sender,
-            freelancer,
+            agreement.client,
+            agreement.freelancer,
             total
         );
 
@@ -210,6 +222,15 @@ contract EscrowMilestones is ReentrancyGuard {
             "Incorrect deposit amount"
         );
 
+        // Les fonds ne sont bloques qu'une fois le freelance engage.
+        IServiceAgreement.Status agreementStatus = _agreementStatus(escrow);
+        require(
+            agreementStatus == IServiceAgreement.Status.Accepted ||
+            agreementStatus == IServiceAgreement.Status.InProgress ||
+            agreementStatus == IServiceAgreement.Status.Delivered,
+            "Agreement not accepted"
+        );
+
         escrow.depositedAmount = msg.value;
         escrow.status = EscrowStatus.Funded;
 
@@ -228,6 +249,8 @@ contract EscrowMilestones is ReentrancyGuard {
             escrow.status == EscrowStatus.InProgress,
             "Invalid escrow status"
         );
+
+        _requireAgreementActive(escrow);
 
         require(
             milestoneId < escrow.milestoneCount,
@@ -266,6 +289,8 @@ contract EscrowMilestones is ReentrancyGuard {
             "Invalid escrow status"
         );
 
+        _requireAgreementActive(escrow);
+
         require(
             milestoneId < escrow.milestoneCount,
             "Invalid milestone"
@@ -293,10 +318,12 @@ contract EscrowMilestones is ReentrancyGuard {
         Escrow storage escrow = escrows[escrowId];
 
         require(
-            escrow.status != EscrowStatus.Disputed &&
-            escrow.status != EscrowStatus.Cancelled,
+            escrow.status == EscrowStatus.Funded ||
+            escrow.status == EscrowStatus.InProgress,
             "Escrow unavailable"
         );
+
+        _requireAgreementActive(escrow);
 
         require(
             milestoneId < escrow.milestoneCount,
@@ -330,44 +357,32 @@ contract EscrowMilestones is ReentrancyGuard {
         );
     }
 
-    function raiseDispute(uint256 escrowId)
-        external
-        escrowExists(escrowId)
-    {
-        Escrow storage escrow = escrows[escrowId];
-
-        require(
-            msg.sender == escrow.client ||
-            msg.sender == escrow.freelancer,
-            "Unauthorized"
-        );
-
-        require(
-            escrow.status == EscrowStatus.Funded ||
-            escrow.status == EscrowStatus.InProgress,
-            "Cannot dispute"
-        );
-
-        escrow.status = EscrowStatus.Disputed;
-
-        emit DisputeRaised(escrowId, msg.sender);
-    }
-
-    function resolveDispute(
-        uint256 escrowId,
-        bool freelancerPaid
-    )
+    /// @notice Solde l'escrow selon l'issue de l'accord : Completed paie le freelance
+    ///         du reste, Cancelled rembourse le client. Appelable par n'importe qui.
+    function settle(uint256 escrowId)
         external
         nonReentrant
         escrowExists(escrowId)
-        onlyArbiter(escrowId)
     {
         Escrow storage escrow = escrows[escrowId];
 
         require(
-            escrow.status == EscrowStatus.Disputed,
-            "No active dispute"
+            escrow.status == EscrowStatus.Created ||
+            escrow.status == EscrowStatus.Funded ||
+            escrow.status == EscrowStatus.InProgress,
+            "Already settled"
         );
+
+        IServiceAgreement.Status agreementStatus = _agreementStatus(escrow);
+
+        require(
+            agreementStatus == IServiceAgreement.Status.Completed ||
+            agreementStatus == IServiceAgreement.Status.Cancelled,
+            "Agreement not finished"
+        );
+
+        bool freelancerPaid =
+            agreementStatus == IServiceAgreement.Status.Completed;
 
         uint256 remaining =
             escrow.depositedAmount - escrow.releasedAmount;
@@ -376,51 +391,19 @@ contract EscrowMilestones is ReentrancyGuard {
             ? EscrowStatus.Completed
             : EscrowStatus.Cancelled;
 
-        escrow.releasedAmount += freelancerPaid ? remaining : 0;
-
         if (freelancerPaid) {
-            escrow.freelancer.transfer(remaining);
-        } else {
-            escrow.client.transfer(remaining);
+            escrow.releasedAmount += remaining;
         }
 
-        emit DisputeResolved(escrowId, freelancerPaid);
-    }
-
-    function refund(uint256 escrowId)
-        external
-        nonReentrant
-        escrowExists(escrowId)
-        onlyClient(escrowId)
-    {
-        Escrow storage escrow = escrows[escrowId];
-
-        require(
-            escrow.status == EscrowStatus.Funded ||
-            escrow.status == EscrowStatus.InProgress,
-            "Refund unavailable"
-        );
-
-        require(
-            escrow.releasedAmount == 0,
-            "Payments already released"
-        );
-
-        for (uint256 i = 0; i < escrow.milestoneCount; i++) {
-            require(
-                milestones[escrowId][i].status == MilestoneStatus.Pending,
-                "Milestone already submitted"
-            );
+        if (remaining > 0) {
+            if (freelancerPaid) {
+                escrow.freelancer.transfer(remaining);
+            } else {
+                escrow.client.transfer(remaining);
+            }
         }
 
-        uint256 amount = escrow.depositedAmount;
-
-        escrow.status = EscrowStatus.Cancelled;
-        escrow.depositedAmount = 0;
-
-        escrow.client.transfer(amount);
-
-        emit RefundIssued(escrowId, escrow.client, amount);
+        emit EscrowSettled(escrowId, freelancerPaid, remaining);
     }
 
     function getMilestone(uint256 escrowId, uint256 milestoneId)
@@ -444,5 +427,24 @@ contract EscrowMilestones is ReentrancyGuard {
         returns (Escrow memory)
     {
         return escrows[escrowId];
+    }
+
+    function _agreementStatus(Escrow storage escrow)
+        private
+        view
+        returns (IServiceAgreement.Status)
+    {
+        return agreements.getAgreement(escrow.agreementId).status;
+    }
+
+    /// @dev Jalons geles pendant un litige et apres une annulation de l'accord.
+    function _requireAgreementActive(Escrow storage escrow) private view {
+        IServiceAgreement.Status agreementStatus = _agreementStatus(escrow);
+
+        require(
+            agreementStatus != IServiceAgreement.Status.Disputed &&
+            agreementStatus != IServiceAgreement.Status.Cancelled,
+            "Agreement frozen"
+        );
     }
 }

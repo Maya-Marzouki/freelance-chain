@@ -1,9 +1,9 @@
 /**
  * Reads and writes `EscrowMilestones` (contract B).
  *
- * The escrow is linked to a `ServiceAgreement` by `agreementId`. The contract
- * does not check that link, so the front creates every escrow with the parties
- * and the arbiter of the agreement and a total equal to its amount.
+ * The escrow is linked to a `ServiceAgreement` by `agreementId`. The contract reads the
+ * agreement: parties, total and status come from it, and there is no arbiter. Milestones
+ * freeze while the agreement is disputed, and `settle` follows its final status.
  */
 import { formatEther, parseEther, type Contract, type Provider } from "ethers";
 import { chainErrorMessage } from "@/lib/agreement-chain";
@@ -28,27 +28,25 @@ const toIso = (seconds: bigint | number) => new Date(Number(seconds) * 1000).toI
 const REASONS: Record<string, string> = {
   "Only client": "Only the client of this escrow can do this.",
   "Only freelancer": "Only the freelancer of this escrow can do this.",
-  "Only arbiter": "Only the arbiter of this escrow can do this.",
   "Escrow does not exist": "This escrow does not exist.",
-  "Invalid freelancer": "Invalid freelancer address.",
-  "Invalid arbiter": "Invalid arbiter address.",
-  "Invalid parties": "The client and the freelancer must be different.",
+  "Agreement not open": "The agreement is no longer open: an escrow can only be set up before delivery.",
+  "Escrow already exists": "This agreement already has an escrow.",
   "Invalid milestones": "The milestones are incomplete.",
   "Invalid amount": "Every milestone needs an amount greater than zero.",
   "Invalid deadline": "Every milestone deadline must be in the future.",
+  "Total must match agreement": "The milestones must add up to the agreement amount.",
   "Invalid escrow status": "This action is not allowed in the escrow's current status.",
   "Incorrect deposit amount": "The deposit must match the escrow total exactly.",
+  "Agreement not accepted": "The freelancer must accept the agreement before the escrow is funded.",
   "Invalid milestone": "This milestone does not exist.",
   "Milestone already submitted": "This milestone was already submitted.",
   "Deadline passed": "The milestone deadline has passed.",
   "Milestone not submitted": "The freelancer has not submitted this milestone yet.",
-  "Escrow unavailable": "The escrow is frozen by a dispute or cancelled.",
+  "Escrow unavailable": "The escrow is not active.",
+  "Agreement frozen": "The agreement is disputed or cancelled: milestones are frozen.",
   "Milestone not approved": "This milestone must be approved before payment.",
-  Unauthorized: "Only the client or the freelancer can do this.",
-  "Cannot dispute": "A dispute can only be opened while the escrow is funded.",
-  "No active dispute": "There is no open dispute on this escrow.",
-  "Refund unavailable": "A refund is only possible while the escrow is funded.",
-  "Payments already released": "Funds were already released: a refund is no longer possible.",
+  "Already settled": "This escrow was already settled.",
+  "Agreement not finished": "The agreement is not finished yet: settle once it is Completed or Cancelled.",
 };
 
 export function escrowErrorMessage(err: unknown, contract?: Contract): string {
@@ -89,7 +87,6 @@ export async function readEscrows(
         agreementId,
         client: e.client,
         freelancer: e.freelancer,
-        arbiter: e.arbiter,
         totalEth: Number(formatEther(e.totalAmount)),
         depositedEth: Number(formatEther(e.depositedAmount)),
         releasedEth: Number(formatEther(e.releasedAmount)),
@@ -152,17 +149,17 @@ export async function readEscrows(
 
 /* ---------------------------------- Writes --------------------------------- */
 
-/** Creates the escrow of an agreement. The connected wallet (the client) becomes the escrow client. */
+/**
+ * Creates the escrow of an agreement. The parties and the total come from the agreement
+ * itself, and the connected wallet must be its client.
+ */
 export async function createEscrowOnChain(
   contract: Contract,
   agreement: Agreement,
-  arbiter: string,
   milestones: EscrowMilestoneInput[],
 ): Promise<{ txHash: string; escrowId: number }> {
   const tx = await contract.createEscrow(
     agreement.onChainId,
-    agreement.freelancer.address,
-    arbiter,
     milestones.map((m) => parseEther(m.amountEth.toFixed(18))),
     milestones.map((m) => m.title),
     milestones.map((m) => m.description),
@@ -210,24 +207,12 @@ export async function releaseMilestoneOnChain(
   return tx.hash as string;
 }
 
-export async function refundEscrowOnChain(contract: Contract, escrowId: number): Promise<string> {
-  const tx = await contract.refund(escrowId);
-  await tx.wait();
-  return tx.hash as string;
-}
-
-export async function raiseEscrowDisputeOnChain(contract: Contract, escrowId: number): Promise<string> {
-  const tx = await contract.raiseDispute(escrowId);
-  await tx.wait();
-  return tx.hash as string;
-}
-
-export async function resolveEscrowDisputeOnChain(
-  contract: Contract,
-  escrowId: number,
-  favorFreelancer: boolean,
-): Promise<string> {
-  const tx = await contract.resolveDispute(escrowId, favorFreelancer);
+/**
+ * Settles the escrow by the outcome of the agreement: Completed pays the freelancer the
+ * remaining funds, Cancelled refunds the client. Anyone can call it once the agreement is finished.
+ */
+export async function settleEscrowOnChain(contract: Contract, escrowId: number): Promise<string> {
+  const tx = await contract.settle(escrowId);
   await tx.wait();
   return tx.hash as string;
 }

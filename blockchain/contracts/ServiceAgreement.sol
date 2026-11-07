@@ -5,12 +5,24 @@ import "./IServiceAgreement.sol";
 
 /// @title ServiceAgreement
 /// @notice Contrat A : accord de prestation entre un client et un freelance.
-/// @dev Socle minimal (creation + acceptation). A completer : livraison,
-///      validation, annulation, litige, paiement (voir docs/ARCHITECTURE.md).
+/// @dev Aucun arbitre humain : un litige se termine soit par la cession d'une
+///      partie, soit par une regle automatique appliquee apres `DISPUTE_WINDOW`.
 contract ServiceAgreement is IServiceAgreement {
+    /// @notice Delai laisse aux parties pour ceder avant l'application de la regle automatique.
+    uint256 public constant DISPUTE_WINDOW = 3 days;
+
+    /// @dev Contexte d'un litige, conserve apres sa resolution.
+    struct Dispute {
+        address raisedBy;
+        Status openedFrom; // InProgress ou Delivered
+        uint256 openedAt;
+    }
+
     uint256 public agreementCount;
-    address public arbiter;
     mapping(uint256 => Agreement) private agreements;
+    mapping(uint256 => Dispute) private disputes;
+    /// @notice Horodatage de la livraison (0 si rien n'a ete livre).
+    mapping(uint256 => uint256) public deliveredAt;
 
     event AgreementCreated(
         uint256 indexed id,
@@ -18,19 +30,18 @@ contract ServiceAgreement is IServiceAgreement {
         address indexed freelancer
     );
     event StatusChanged(uint256 indexed id, Status oldStatus, Status newStatus);
+    /// @param byDefault true si la regle automatique a tranche, false si une partie a cede.
+    event DisputeResolved(uint256 indexed id, bool favorFreelancer, bool byDefault);
 
     error NotClient();
     error NotFreelancer();
     error InvalidStatus(Status current);
     error AgreementNotFound();
     error InvalidParameters();
-    error NotArbiter();
     error DeadlineNotPassed();
     error NotParty();
-
-    constructor() {
-        arbiter = msg.sender;
-    }
+    /// @param endsAt Horodatage a partir duquel la regle automatique peut etre appliquee.
+    error DisputeWindowOpen(uint256 endsAt);
 
     function createAgreement(
         address freelancer,
@@ -78,6 +89,7 @@ contract ServiceAgreement is IServiceAgreement {
         if (msg.sender != a.freelancer) revert NotFreelancer();
 
         _transition(id, a, Status.InProgress, Status.Delivered);
+        deliveredAt[id] = block.timestamp;
     }
 
     function approveDelivery(uint256 id) external {
@@ -118,19 +130,54 @@ contract ServiceAgreement is IServiceAgreement {
             revert InvalidStatus(a.status);
         }
 
+        disputes[id] = Dispute({raisedBy: msg.sender, openedFrom: a.status, openedAt: block.timestamp});
         _transition(id, a, a.status, Status.Disputed);
     }
 
-    /// @notice L'arbitre tranche : Completed (le freelance est paye) ou Cancelled (le client est rembourse).
-    function resolveDispute(uint256 id, bool favorFreelancer) external {
+    /// @notice Une partie cede : le client qui cede paie le freelance (Completed),
+    ///         le freelance qui cede rembourse le client (Cancelled).
+    function concede(uint256 id) external {
         Agreement storage a = _get(id);
-        if (msg.sender != arbiter) revert NotArbiter();
+        if (msg.sender != a.client && msg.sender != a.freelancer) revert NotParty();
 
-        _transition(
-            id,
-            a,
-            Status.Disputed,
-            favorFreelancer ? Status.Completed : Status.Cancelled
+        bool favorFreelancer = msg.sender == a.client;
+        _transition(id, a, Status.Disputed, favorFreelancer ? Status.Completed : Status.Cancelled);
+        emit DisputeResolved(id, favorFreelancer, false);
+    }
+
+    /// @notice Regle automatique, appelable par n'importe qui une fois le delai ecoule sans cession.
+    function resolveDispute(uint256 id) external {
+        Agreement storage a = _get(id);
+        if (a.status != Status.Disputed) revert InvalidStatus(a.status);
+
+        uint256 endsAt = disputes[id].openedAt + DISPUTE_WINDOW;
+        if (block.timestamp < endsAt) revert DisputeWindowOpen(endsAt);
+
+        bool favorFreelancer = _freelancerWinsByDefault(id, a);
+        _transition(id, a, Status.Disputed, favorFreelancer ? Status.Completed : Status.Cancelled);
+        emit DisputeResolved(id, favorFreelancer, true);
+    }
+
+    /// @notice Contexte du litige et issue qu'appliquerait la regle automatique.
+    function getDispute(uint256 id)
+        external
+        view
+        returns (
+            address raisedBy,
+            Status openedFrom,
+            uint256 openedAt,
+            uint256 windowEndsAt,
+            bool freelancerWinsByDefault
+        )
+    {
+        Agreement storage a = _get(id);
+        Dispute storage d = disputes[id];
+        return (
+            d.raisedBy,
+            d.openedFrom,
+            d.openedAt,
+            d.openedAt == 0 ? 0 : d.openedAt + DISPUTE_WINDOW,
+            d.openedAt != 0 && _freelancerWinsByDefault(id, a)
         );
     }
 
@@ -145,6 +192,11 @@ contract ServiceAgreement is IServiceAgreement {
 
         a.status = next;
         emit StatusChanged(id, expected, next);
+    }
+
+    /// @dev Le freelance gagne par defaut uniquement s'il avait livre et dans les delais.
+    function _freelancerWinsByDefault(uint256 id, Agreement storage a) internal view returns (bool) {
+        return disputes[id].openedFrom == Status.Delivered && deliveredAt[id] <= a.deadline;
     }
 
     function _get(uint256 id) internal view returns (Agreement storage) {

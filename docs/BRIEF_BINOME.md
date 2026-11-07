@@ -70,9 +70,10 @@ Created --accept--> Accepted --start--> InProgress --deliver--> Delivered --appr
 | `approveDelivery` | client | Delivered | Completed |
 | `cancel` | client | Created ou Accepted | Cancelled |
 | `raiseDispute` | client ou freelance | InProgress ou Delivered | Disputed |
-| `resolveDispute(id, favorFreelancer)` | arbitre | Disputed | Completed si le freelance a gain de cause, sinon Cancelled |
+| `concede(id)` | client ou freelance | Disputed | Completed (le client cede) ou Cancelled (le freelance cede) |
+| `resolveDispute(id)` | n'importe qui, apres 3 jours | Disputed | Completed si livre dans les delais, sinon Cancelled |
 
-**(à valider)** L'arbitre est l'adresse qui déploie le contrat (`arbiter = msg.sender` dans le constructeur). Simple à défendre à l'oral ; on peut le remplacer plus tard par un vote ou un multisig.
+**Mise a jour : plus d'arbitre humain.** Seuls le client et le freelance sont des personnes. Un litige se termine par la cession d'une partie ou, apres un delai de 3 jours, par une regle automatique du contrat (voir `docs/ARCHITECTURE.md`).
 
 ### Événements et erreurs
 Un événement `StatusChanged(id, ancien, nouveau)` à chaque transition (c'est lui qui alimente le suivi côté front). Erreurs custom (`NotClient`, `NotFreelancer`, `InvalidStatus`, `NotArbiter`...), moins coûteuses en gas que les `require` avec message.
@@ -82,7 +83,7 @@ Pour **chaque** fonction : le cas nominal, le mauvais appelant, le mauvais statu
 
 ## 6. Contrat B : `EscrowMilestones` **(à valider)**
 
-**Rôle** : bloquer l'argent du client et le libérer selon l'état de l'accord de A. Il **lit** A mais ne modifie jamais A.
+**Rôle** : bloquer l'argent du client et le libérer selon l'état de l'accord de A. Il **lit** A (parties, montant, statut) et ne le modifie jamais. Il n'a pas d'arbitre.
 
 | Fonction | Appelant | Condition (lue sur A) | Effet |
 |---|---|---|---|
@@ -126,7 +127,7 @@ Règles :
 
 ## 8. Démarche de travail
 
-1. **Valider ensemble** les points « à valider » (arbitre, escrow, interface) et committer ce document.
+1. **Valider ensemble** les points « à valider » (escrow, interface) et committer ce document.
 2. **Chacun sa branche**, une Pull Request vers `main`, relue par l'autre avant merge.
 3. **Contrats** : écrire d'abord les tests d'une fonction, puis la fonction. Petits commits fréquents.
 4. **Frontend** : seulement après que les contrats compilent et sont testés. Les ABI sont générées automatiquement dans `frontend/src/contracts/`.
@@ -140,7 +141,7 @@ Règles :
 3. Le client dépose les fonds dans l'escrow.
 4. Le freelance démarre puis livre : `InProgress`, `Delivered`.
 5. Le client valide : `Completed`. Les fonds sont libérés au freelance.
-6. Cas d'échec montré : un tiers tente d'accepter l'accord et la transaction échoue. Variante : litige tranché par l'arbitre.
+6. Cas d'échec montré : un tiers tente d'accepter l'accord et la transaction échoue. Variante : litige, cession d'une partie ou règle automatique après 3 jours (`npm run time:skip -- 3`).
 
 ## 10. Usage de l'IA
 
@@ -156,4 +157,4 @@ Chacun doit savoir répondre, sans l'IA, sur son propre contrat **et** sur celui
 - Que se passe-t-il si le freelance n'accepte jamais, ou si le client disparaît ?
 - Quel est le coût en gas de chaque fonction ? (`REPORT_GAS=true npm test`)
 - Pourquoi des erreurs custom plutôt que des `require` avec message ?
-- Quelles sont les limites de votre arbitre, et comment les dépasser ?
+- Quelles sont les limites de la règle automatique de litige (elle ne juge pas la qualité), et comment les dépasser ?

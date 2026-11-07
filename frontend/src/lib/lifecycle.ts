@@ -7,6 +7,7 @@
 import type {
   ActivityType,
   AgreementAction,
+  Agreement,
   AgreementStatus,
   EscrowStatus,
   Milestone,
@@ -24,9 +25,9 @@ export interface ActionDefinition {
   event: ActivityType;
   /**
    * Extra condition enforced by the contract besides role and status:
-   * `deadlinePassed` (cancelOverdue) or `arbiter` (resolve functions).
+   * `deadlinePassed` (cancelOverdue) or `disputeWindowElapsed` (automatic ruling).
    */
-  requires?: "deadlinePassed" | "arbiter";
+  requires?: "deadlinePassed" | "disputeWindowElapsed";
   tone: "primary" | "danger" | "neutral";
   confirmTitle: string;
   confirmBody: string;
@@ -84,14 +85,15 @@ export const ACTIONS: Record<AgreementAction, ActionDefinition> = {
   dispute: {
     action: "dispute",
     label: "Raise Dispute",
-    description: "Freeze the escrow and open a dispute.",
+    description: "Freeze the milestones and open a dispute.",
     allowedRoles: ["client", "freelancer"],
     from: ["InProgress", "Delivered"],
     to: "Disputed",
     event: "DisputeRaised",
     tone: "danger",
     confirmTitle: "Raise a dispute?",
-    confirmBody: "Escrow funds will stay locked until the dispute is resolved by both parties or an arbitrator.",
+    confirmBody:
+      "Milestones freeze. The dispute ends when a party concedes or, after the dispute window, by the contract's automatic rule: the freelancer wins only if the work was delivered on time.",
   },
   cancel: {
     action: "cancel",
@@ -118,31 +120,45 @@ export const ACTIONS: Record<AgreementAction, ActionDefinition> = {
     confirmTitle: "Cancel this overdue agreement?",
     confirmBody: "The deadline has passed and nothing was delivered. The agreement will be cancelled.",
   },
-  resolveForFreelancer: {
-    action: "resolveForFreelancer",
-    label: "Rule for Freelancer",
-    description: "Close the dispute in favour of the freelancer.",
-    allowedRoles: ["client", "freelancer", "observer"],
+  concedeAsClient: {
+    action: "concedeAsClient",
+    label: "Concede (pay freelancer)",
+    description: "Admit the dispute is unfounded: the freelancer is paid.",
+    allowedRoles: ["client"],
     from: ["Disputed"],
-    requires: "arbiter",
     to: "Completed",
     event: "AgreementCompleted",
-    tone: "primary",
-    confirmTitle: "Rule in favour of the freelancer?",
-    confirmBody: "The agreement becomes Completed: the freelancer is entitled to payment. This decision is final.",
+    tone: "danger",
+    confirmTitle: "Concede the dispute?",
+    confirmBody:
+      "You admit the freelancer is right. The agreement becomes Completed and the freelancer is entitled to the remaining payment. This is final.",
   },
-  resolveForClient: {
-    action: "resolveForClient",
-    label: "Rule for Client",
-    description: "Close the dispute in favour of the client.",
-    allowedRoles: ["client", "freelancer", "observer"],
+  concedeAsFreelancer: {
+    action: "concedeAsFreelancer",
+    label: "Concede (refund client)",
+    description: "Admit the dispute is founded: the client is refunded.",
+    allowedRoles: ["freelancer"],
     from: ["Disputed"],
-    requires: "arbiter",
     to: "Cancelled",
     event: "AgreementCancelled",
     tone: "danger",
-    confirmTitle: "Rule in favour of the client?",
-    confirmBody: "The agreement becomes Cancelled: the client is entitled to a refund. This decision is final.",
+    confirmTitle: "Concede the dispute?",
+    confirmBody:
+      "You admit the client is right. The agreement becomes Cancelled and the client is entitled to a refund. This is final.",
+  },
+  resolveDispute: {
+    action: "resolveDispute",
+    label: "Apply automatic ruling",
+    description: "Close the dispute with the contract's automatic rule.",
+    allowedRoles: ["client", "freelancer", "observer"],
+    from: ["Disputed"],
+    requires: "disputeWindowElapsed",
+    to: "Completed", // placeholder: see `actionTarget`, the real outcome depends on the dispute
+    event: "AgreementCompleted",
+    tone: "primary",
+    confirmTitle: "Apply the automatic ruling?",
+    confirmBody:
+      "The contract closes the dispute by its rule: the freelancer wins only if the work was delivered on time, otherwise the client is refunded. Anyone can trigger it.",
   },
 };
 
@@ -151,19 +167,30 @@ export const ACTION_ORDER: AgreementAction[] = [
   "start",
   "deliver",
   "approve",
-  "resolveForFreelancer",
   "dispute",
   "cancel",
   "cancelOverdue",
-  "resolveForClient",
+  "concedeAsClient",
+  "concedeAsFreelancer",
+  "resolveDispute",
 ];
+
+/** Outcome of the automatic ruling, as the contract computes it. */
+export function defaultRuling(agreement: Pick<Agreement, "dispute">): "Completed" | "Cancelled" {
+  return agreement.dispute?.freelancerWinsByDefault ? "Completed" : "Cancelled";
+}
+
+/** Status an action leads to. Only the automatic ruling depends on the agreement. */
+export function actionTarget(action: AgreementAction, agreement: Pick<Agreement, "dispute">): AgreementStatus {
+  return action === "resolveDispute" ? defaultRuling(agreement) : ACTIONS[action].to;
+}
 
 /** Facts about the viewer / chain that role and status alone cannot express. */
 export interface ActionContext {
   /** `block.timestamp` is past the agreement deadline. */
   deadlinePassed?: boolean;
-  /** The viewer is the contract's arbiter. */
-  isArbiter?: boolean;
+  /** The dispute window is over: anyone can apply the automatic ruling. */
+  disputeWindowElapsed?: boolean;
 }
 
 export function canPerform(
@@ -173,8 +200,8 @@ export function canPerform(
   context: ActionContext = {},
 ): boolean {
   const def = ACTIONS[action];
-  if (def.requires === "arbiter") return !!context.isArbiter && def.from.includes(status);
   if (def.requires === "deadlinePassed" && !context.deadlinePassed) return false;
+  if (def.requires === "disputeWindowElapsed" && !context.disputeWindowElapsed) return false;
   return def.allowedRoles.includes(role) && def.from.includes(status);
 }
 
@@ -187,9 +214,12 @@ export function availableActions(
 }
 
 /** Explains why nothing is actionable, for empty action panels. */
-export function waitingMessage(role: Role, status: AgreementStatus, isArbiter = false): string {
-  if (role === "observer" && isArbiter && status === "Disputed") return "";
-  if (role === "observer") return "You are not a party to this agreement. Actions are limited to the client and freelancer.";
+export function waitingMessage(role: Role, status: AgreementStatus): string {
+  if (role === "observer") {
+    return status === "Disputed"
+      ? "A dispute is open. After the dispute window anyone can apply the automatic ruling."
+      : "You are not a party to this agreement. Actions are limited to the client and freelancer.";
+  }
   switch (status) {
     case "Created":
       return role === "client" ? "Waiting for the freelancer to accept." : "";
@@ -204,9 +234,7 @@ export function waitingMessage(role: Role, status: AgreementStatus, isArbiter = 
     case "Cancelled":
       return "This agreement was cancelled. No further actions are available.";
     case "Disputed":
-      return isArbiter
-        ? ""
-        : "A dispute is open. Only the arbiter can resolve it: the agreement then becomes Completed or Cancelled.";
+      return "";
   }
 }
 

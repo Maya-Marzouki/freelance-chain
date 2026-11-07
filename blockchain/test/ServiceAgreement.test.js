@@ -62,10 +62,6 @@ describe("ServiceAgreement", function () {
     await expect(contract.getAgreement(0)).to.be.revertedWithCustomError(contract, "AgreementNotFound");
   });
 
-  it("definit l'arbitre comme le deployeur", async function () {
-    expect(await contract.arbiter()).to.equal(client.address);
-  });
-
   async function createAndAccept() {
     await create();
     await contract.connect(freelancer).acceptAgreement(1);
@@ -253,42 +249,97 @@ describe("ServiceAgreement", function () {
     });
   });
 
-  describe("resolveDispute", function () {
-    let arbiter;
-
+  describe("concede", function () {
     beforeEach(async function () {
-      // L'arbitre est celui qui deploie : on redeploie avec un compte distinct des parties
-      [, , , arbiter] = await ethers.getSigners();
-      contract = await ethers.deployContract("ServiceAgreement", [], arbiter);
       await createAcceptAndStart();
       await contract.connect(client).raiseDispute(1);
     });
 
-    it("l'arbitre tranche en faveur du freelance : Completed", async function () {
-      await expect(contract.connect(arbiter).resolveDispute(1, true))
-        .to.emit(contract, "StatusChanged").withArgs(1, 6, 4); // Disputed -> Completed
+    it("le client cede : le freelance est paye (Completed)", async function () {
+      await expect(contract.connect(client).concede(1))
+        .to.emit(contract, "StatusChanged").withArgs(1, 6, 4) // Disputed -> Completed
+        .and.to.emit(contract, "DisputeResolved").withArgs(1, true, false);
       expect((await contract.getAgreement(1)).status).to.equal(4n);
     });
 
-    it("l'arbitre tranche en faveur du client : Cancelled", async function () {
-      await expect(contract.connect(arbiter).resolveDispute(1, false))
-        .to.emit(contract, "StatusChanged").withArgs(1, 6, 5); // Disputed -> Cancelled
+    it("le freelance cede : le client est rembourse (Cancelled)", async function () {
+      await expect(contract.connect(freelancer).concede(1))
+        .to.emit(contract, "StatusChanged").withArgs(1, 6, 5) // Disputed -> Cancelled
+        .and.to.emit(contract, "DisputeResolved").withArgs(1, false, false);
       expect((await contract.getAgreement(1)).status).to.equal(5n);
     });
 
-    it("refuse les parties et les tiers", async function () {
-      await expect(contract.connect(client).resolveDispute(1, false))
-        .to.be.revertedWithCustomError(contract, "NotArbiter");
-      await expect(contract.connect(freelancer).resolveDispute(1, true))
-        .to.be.revertedWithCustomError(contract, "NotArbiter");
-      await expect(contract.connect(stranger).resolveDispute(1, true))
-        .to.be.revertedWithCustomError(contract, "NotArbiter");
+    it("refuse un tiers", async function () {
+      await expect(contract.connect(stranger).concede(1)).to.be.revertedWithCustomError(contract, "NotParty");
     });
 
     it("refuse si l'accord n'est pas en litige", async function () {
-      await contract.connect(arbiter).resolveDispute(1, true); // deja tranche
-      await expect(contract.connect(arbiter).resolveDispute(1, false))
-        .to.be.revertedWithCustomError(contract, "InvalidStatus");
+      await contract.connect(client).concede(1);
+      await expect(contract.connect(freelancer).concede(1)).to.be.revertedWithCustomError(contract, "InvalidStatus");
+    });
+  });
+
+  describe("resolveDispute (regle automatique)", function () {
+    const WINDOW = 3 * 24 * 3600;
+
+    async function openDispute(deliverOnTime) {
+      await createAcceptAndStart();
+      if (deliverOnTime !== undefined) {
+        if (!deliverOnTime) await time.increaseTo(deadline + 1);
+        await contract.connect(freelancer).markDelivered(1);
+      }
+      await contract.connect(client).raiseDispute(1);
+    }
+
+    it("refuse tant que le delai n'est pas ecoule", async function () {
+      await openDispute(true);
+      await expect(contract.connect(stranger).resolveDispute(1)).to.be.revertedWithCustomError(contract, "DisputeWindowOpen");
+    });
+
+    it("livraison dans les delais : le freelance gagne, par n'importe qui", async function () {
+      await openDispute(true);
+      await time.increase(WINDOW);
+      await expect(contract.connect(stranger).resolveDispute(1))
+        .to.emit(contract, "StatusChanged").withArgs(1, 6, 4)
+        .and.to.emit(contract, "DisputeResolved").withArgs(1, true, true);
+      expect((await contract.getAgreement(1)).status).to.equal(4n); // Completed
+    });
+
+    it("livraison en retard : le client est rembourse", async function () {
+      await openDispute(false);
+      await time.increase(WINDOW);
+      await contract.connect(stranger).resolveDispute(1);
+      expect((await contract.getAgreement(1)).status).to.equal(5n); // Cancelled
+    });
+
+    it("rien livre : le client est rembourse", async function () {
+      await openDispute();
+      await time.increase(WINDOW);
+      await contract.connect(freelancer).resolveDispute(1);
+      expect((await contract.getAgreement(1)).status).to.equal(5n);
+    });
+
+    it("refuse si l'accord n'est pas en litige, ou deja tranche", async function () {
+      await createAcceptAndStart();
+      await expect(contract.resolveDispute(1)).to.be.revertedWithCustomError(contract, "InvalidStatus");
+      await contract.connect(client).raiseDispute(1);
+      await contract.connect(client).concede(1);
+      await time.increase(WINDOW);
+      await expect(contract.resolveDispute(1)).to.be.revertedWithCustomError(contract, "InvalidStatus");
+    });
+
+    it("getDispute donne le contexte et l'issue par defaut", async function () {
+      expect((await contract.getDispute((await create(), 1))).openedAt).to.equal(0n);
+      await contract.connect(freelancer).acceptAgreement(1);
+      await contract.connect(freelancer).startWork(1);
+      await contract.connect(freelancer).markDelivered(1);
+      await contract.connect(client).raiseDispute(1);
+      const d = await contract.getDispute(1);
+      expect(d.raisedBy).to.equal(client.address);
+      expect(d.openedFrom).to.equal(3n); // Delivered
+      expect(d.windowEndsAt).to.equal(d.openedAt + BigInt(WINDOW));
+      expect(d.freelancerWinsByDefault).to.equal(true);
+      expect(await contract.deliveredAt(1)).to.be.greaterThan(0n);
     });
   });
 
