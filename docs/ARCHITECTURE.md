@@ -59,7 +59,7 @@ Il n'y a que deux personnes dans l'application : le client et le freelance. Un l
 | Livre dans les delais (`deliveredAt <= deadline`) | Completed : le freelance est paye | la livraison est un fait verifiable |
 | Livre en retard | Cancelled : le client est rembourse | l'echeance n'a pas ete respectee |
 
-`getDispute(id)` donne le contexte (qui, quand, fin du delai, issue par defaut) pour l'afficher dans l'interface. Limite assumee : la regle est objective mais ne juge pas la qualite du travail livre. Pour la demonstration, `npm run time:skip -- 3` avance l'horloge du noeud local de 3 jours.
+`getDispute(id)` donne le contexte (qui, quand, fin du delai, issue par defaut) pour l'afficher dans l'interface. Limite assumee : la regle est objective mais ne juge pas la qualite du travail livre. Pour la demonstration, `DAYS=3 npm run time:skip` avance l'horloge du noeud local de 3 jours.
 
 ### Lien entre le contrat A et le contrat B
 

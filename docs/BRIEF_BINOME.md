@@ -141,7 +141,7 @@ Règles :
 3. Le client dépose les fonds dans l'escrow.
 4. Le freelance démarre puis livre : `InProgress`, `Delivered`.
 5. Le client valide : `Completed`. Les fonds sont libérés au freelance.
-6. Cas d'échec montré : un tiers tente d'accepter l'accord et la transaction échoue. Variante : litige, cession d'une partie ou règle automatique après 3 jours (`npm run time:skip -- 3`).
+6. Cas d'échec montré : un tiers tente d'accepter l'accord et la transaction échoue. Variante : litige, cession d'une partie ou règle automatique après 3 jours (`DAYS=3 npm run time:skip`).
 
 ## 10. Usage de l'IA
 

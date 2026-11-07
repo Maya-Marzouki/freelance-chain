@@ -41,7 +41,7 @@ npm run dev              # http://localhost:3000
 1. Ajouter le reseau : RPC `http://127.0.0.1:8545`, chain ID `31337`, symbole `ETH`.
 2. Importer 2 comptes de test affiches par `npm run node` (cle privee de test uniquement, jamais une vraie cle).
 3. Utiliser un compte pour le client, l'autre pour le freelance. Il n'y a pas d'arbitre : les litiges suivent des regles du contrat.
-4. Pour la demonstration du delai de litige (3 jours), `npm run time:skip -- 3` avance l'horloge du noeud local.
+4. Pour la demonstration du delai de litige (3 jours), `DAYS=3 npm run time:skip` avance l'horloge du noeud local.
 
 > Les adresses des contrats sont deterministes : sur un noeud neuf, `npm run deploy:local` deploie `ServiceAgreement` puis `EscrowMilestones`
 > aux adresses deja presentes dans `frontend/src/contracts/*.json`. Ne lancez le deploiement qu'une seule fois par noeud neuf,

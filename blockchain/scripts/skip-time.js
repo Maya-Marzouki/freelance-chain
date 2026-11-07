@@ -1,5 +1,5 @@
 // Avance l'horloge du noeud local, pour demontrer le delai d'un litige (3 jours) ou une echeance depassee.
-// Usage : npm run time:skip -- 3      (avance de 3 jours, 1 jour par defaut)
+// Usage : DAYS=3 npm run time:skip      (avance de 3 jours, 1 jour par defaut)
 const hre = require("hardhat");
 
 async function main() {
