@@ -5,7 +5,7 @@ import { Skeleton } from "@/components/ui/misc";
 
 export const metadata: Metadata = { title: "Agreement Details" };
 
-export default function AgreementDetailsPage({ params }: PageProps<"/agreements/[id]">) {
+export default function AgreementDetailsPage({ params }: PageProps<"/[space]/agreements/[id]">) {
   // `params` is resolved inside the client component, under Suspense, so the
   // rest of the shell can be prerendered.
   return (

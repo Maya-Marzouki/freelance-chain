@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/space/link";
 import { ArrowUpRight, Banknote, CalendarClock, Check, ChevronDown, Lock, LockKeyhole, Send, Vault } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -11,6 +11,7 @@ import { MilestoneBadge, StatusBadge } from "@/components/ui/status-badge";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { EscrowControls } from "./escrow-controls";
 import { useAppStore } from "@/components/providers/app-store";
+import { useScoped } from "@/components/space/use-scoped";
 import { useToast } from "@/components/providers/toast-provider";
 import { useWallet } from "@/components/wallet/wallet-provider";
 import { milestoneAction, type MilestoneAction } from "@/lib/lifecycle";
@@ -27,7 +28,8 @@ interface Pending {
 }
 
 export function EscrowView() {
-  const { agreements, milestones, roleFor, performMilestoneAction, mode, escrows: chainEscrows } = useAppStore();
+  const { roleFor, performMilestoneAction, mode } = useAppStore();
+  const { agreements, milestones, escrows: chainEscrows } = useScoped();
   const live = mode === "chain";
   const wallet = useWallet();
   const toast = useToast();

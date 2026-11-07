@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/space/link";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronRight } from "lucide-react";
 import { AddressAvatar } from "@/components/ui/address";
 import { StatusBadge } from "@/components/ui/status-badge";

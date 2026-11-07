@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
-import Link from "next/link";
-import { ArrowRight, CheckCircle2, FilePlus2, FileText, Loader, LockKeyhole, Wallet } from "lucide-react";
+import Link from "@/components/space/link";
+import { ArrowRight, Banknote, ClipboardCheck, FilePlus2, FileText, Loader, LockKeyhole, Wallet } from "lucide-react";
 import { ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/misc";
@@ -10,6 +10,9 @@ import { STATUS_META } from "@/components/ui/status-badge";
 import { AgreementsTable } from "@/components/agreements/agreements-table";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { useAppStore } from "@/components/providers/app-store";
+import { useAuth } from "@/components/auth/auth-provider";
+import { useSpace } from "@/components/space/space-provider";
+import { useScoped } from "@/components/space/use-scoped";
 import { useWallet } from "@/components/wallet/wallet-provider";
 import { ConnectWallet } from "@/components/wallet/connect-wallet";
 import { AGREEMENT_STATUSES } from "@/types/agreement";
@@ -19,7 +22,10 @@ import { StatCard } from "./stat-card";
 const ACTIVE = new Set(["Accepted", "InProgress", "Delivered"]);
 
 export function DashboardView() {
-  const { agreements, milestones, activity, user, mode, escrows } = useAppStore();
+  const { mode } = useAppStore();
+  const { agreements, milestones, activity, escrows } = useScoped();
+  const { profile } = useAuth();
+  const role = useSpace() ?? "client";
   const wallet = useWallet();
 
   const stats = useMemo(() => {
@@ -40,7 +46,15 @@ export function DashboardView() {
             return sum + a.amountEth - released;
           }, 0);
     const byStatus = AGREEMENT_STATUSES.map((s) => ({ status: s, count: agreements.filter((a) => a.status === s).length }));
-    return { total: agreements.length, active: active.length, completed: completed.length, tvl, byStatus };
+    // Client: what waits for their review. Freelancer: what waits for their action.
+    const toReview =
+      agreements.filter((a) => a.status === "Delivered").length + milestones.filter((m) => m.status === "Submitted").length;
+    const toDo = agreements.filter((a) => a.status === "Created" || a.status === "Accepted").length;
+    const earned =
+      mode === "chain"
+        ? escrows.reduce((sum, e) => sum + e.releasedEth, 0)
+        : milestones.filter((m) => m.status === "Released").reduce((sum, m) => sum + m.amountEth, 0);
+    return { total: agreements.length, active: active.length, completed: completed.length, tvl, byStatus, toReview, toDo, earned };
   }, [agreements, milestones, mode, escrows]);
 
   const recent = useMemo(
@@ -57,12 +71,18 @@ export function DashboardView() {
   return (
     <>
       <PageHeader
-        title={`Welcome back, ${user.name.split(" ")[0]}`}
-        description="Here's what's happening across your agreements today."
+        title={`Welcome back, ${(profile?.name ?? "").split(" ")[0]}`}
+        description={
+          role === "client"
+            ? "Here is where your agreements and payments stand today."
+            : "Here are the jobs you were given and the payments you are owed."
+        }
         actions={
-          <ButtonLink href="/agreements/create">
-            <FilePlus2 className="size-4" aria-hidden /> New Agreement
-          </ButtonLink>
+          role === "client" ? (
+            <ButtonLink href="/agreements/create">
+              <FilePlus2 className="size-4" aria-hidden /> New Agreement
+            </ButtonLink>
+          ) : undefined
         }
       />
 
@@ -86,35 +106,56 @@ export function DashboardView() {
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Total Agreements" value={stats.total} hint="All time" icon={<FileText />} />
+        <StatCard label={role === "client" ? "My Agreements" : "My Jobs"} value={stats.total} hint="All time" icon={<FileText />} />
         <StatCard
-          label="Active Agreements"
+          label="Active"
           value={stats.active}
           hint="Accepted, in progress or delivered"
           icon={<Loader />}
           tint="bg-cyan-50 text-cyan-600"
         />
-        <StatCard
-          label="Completed Agreements"
-          value={stats.completed}
-          hint={`${Math.round((stats.completed / Math.max(stats.total, 1)) * 100)}% completion rate`}
-          icon={<CheckCircle2 />}
-          tint="bg-emerald-50 text-emerald-600"
-        />
-        <StatCard
-          label="Total Value Locked"
-          value={formatEth(stats.tvl, 2)}
-          hint={`≈ ${formatUsd(stats.tvl)} (mock rate)`}
-          icon={<LockKeyhole />}
-          tint="bg-navy-900 text-cyan-400"
-        />
+        {role === "client" ? (
+          <>
+            <StatCard
+              label="To Review"
+              value={stats.toReview}
+              hint="Deliveries and milestones waiting for you"
+              icon={<ClipboardCheck />}
+              tint="bg-amber-50 text-amber-600"
+            />
+            <StatCard
+              label="Funds Locked"
+              value={formatEth(stats.tvl, 2)}
+              hint={`≈ ${formatUsd(stats.tvl)} (mock rate)`}
+              icon={<LockKeyhole />}
+              tint="bg-navy-900 text-cyan-400"
+            />
+          </>
+        ) : (
+          <>
+            <StatCard
+              label="To Accept or Start"
+              value={stats.toDo}
+              hint="Jobs waiting for your action"
+              icon={<ClipboardCheck />}
+              tint="bg-amber-50 text-amber-600"
+            />
+            <StatCard
+              label="Earned"
+              value={formatEth(stats.earned, 2)}
+              hint={`≈ ${formatUsd(stats.earned)} paid by released milestones`}
+              icon={<Banknote />}
+              tint="bg-emerald-50 text-emerald-600"
+            />
+          </>
+        )}
       </div>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <Card className="overflow-hidden">
           <CardHeader
-            title="Recent Agreements"
-            description="The five most recently created agreements"
+            title={role === "client" ? "Recent Agreements" : "Recent Jobs"}
+            description="The five most recent"
             action={
               <Link
                 href="/agreements"

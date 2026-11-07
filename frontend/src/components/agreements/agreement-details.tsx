@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/space/link";
 import { ArrowLeft, CalendarClock, CalendarPlus, Coins, FileSearch, FileText, Hash, LockKeyhole } from "lucide-react";
 import { ButtonLink } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";

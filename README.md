@@ -50,6 +50,14 @@ npm run dev              # http://localhost:3000
 > Apres chaque redemarrage de `npm run node`, relancer `npm run deploy:local` et reinitialiser les comptes MetaMask
 > (Parametres > Avance > Effacer les donnees d'activite) pour eviter les erreurs de nonce.
 
+## Comptes et roles
+
+1. Ouvrir `http://localhost:3000`, puis **Get Started** (`/signup`).
+2. Choisir le role (**client** ou **freelance**), saisir un nom, connecter MetaMask, **Create account**.
+3. Chacun arrive dans son espace (`/client/dashboard` ou `/freelancer/dashboard`). Pour changer de compte : se deconnecter, changer de compte dans MetaMask, se reconnecter (ou s'inscrire avec ce compte).
+
+Le compte (role + nom) est lie a l'adresse du portefeuille et conserve dans ce navigateur.
+
 ## Workflow Git (binome)
 
 - Une branche par fonctionnalite (`feature/service-agreement`, `feature/escrow`), merge via Pull Request.

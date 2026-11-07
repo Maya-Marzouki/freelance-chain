@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Select } from "@/components/ui/input";
 import { EmptyState, PageHeader } from "@/components/ui/misc";
 import { useAppStore } from "@/components/providers/app-store";
+import { useScoped } from "@/components/space/use-scoped";
 import type { ActivityItem, ActivityType } from "@/types/agreement";
 import { ACTIVITY_META, ActivityTimeline } from "./activity-timeline";
 
@@ -26,7 +27,8 @@ const FILTERS: { value: ActivityType | "all"; label: string }[] = [
 const PAGE = 12;
 
 export function ActivityView() {
-  const { activity, agreements, mode } = useAppStore();
+  const { mode } = useAppStore();
+  const { activity, agreements } = useScoped();
   const [type, setType] = useState<ActivityType | "all">("all");
   const [limit, setLimit] = useState(PAGE);
 

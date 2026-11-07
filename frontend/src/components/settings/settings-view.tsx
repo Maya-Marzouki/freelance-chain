@@ -9,7 +9,7 @@ import { Field, Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/misc";
 import { ConnectWallet } from "@/components/wallet/connect-wallet";
 import { useWallet } from "@/components/wallet/wallet-provider";
-import { useAppStore } from "@/components/providers/app-store";
+import { useAuth } from "@/components/auth/auth-provider";
 import { useToast } from "@/components/providers/toast-provider";
 import { HARDHAT_CHAIN_ID, HARDHAT_NETWORK, isContractDeployed } from "@/lib/ethereum";
 import { cn } from "@/lib/utils";
@@ -64,7 +64,8 @@ function Toggle({
 
 export function SettingsView() {
   const wallet = useWallet();
-  const { user } = useAppStore();
+  const { profile } = useAuth();
+  const user = { name: profile?.name ?? "", address: profile?.address ?? "", title: "" };
   const toast = useToast();
   const [name, setName] = useState(user.name);
   const [title, setTitle] = useState(user.title ?? "");
@@ -152,7 +153,7 @@ export function SettingsView() {
         </Card>
 
         <Card>
-          <CardHeader title="Profile" description="Display information shown to counterparties (demo account)." />
+          <CardHeader title="Profile" description={`Your ${profile?.role ?? ""} account. The role is chosen at sign-up.`} />
           <CardBody>
             <form
               className="space-y-5"
@@ -169,7 +170,8 @@ export function SettingsView() {
                 <AddressAvatar address={user.address} size={56} />
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-navy-900">{name || "—"}</p>
-                  <CopyValue value={user.address} chars={6} label="Copy demo address" />
+                  <CopyValue value={user.address} chars={6} label="Copy wallet address" />
+                  <p className="mt-1 text-xs text-slate-500 capitalize">{profile?.role} account</p>
                 </div>
               </div>
               <Field label="Display name">

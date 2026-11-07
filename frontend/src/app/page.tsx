@@ -80,7 +80,7 @@ export default function LandingPage() {
                 with escrowed funds, milestone payments and a verifiable history of every step.
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
-                <ButtonLink href="/dashboard" size="lg">
+                <ButtonLink href="/signup" size="lg">
                   Get Started <ArrowRight className="size-4" aria-hidden />
                 </ButtonLink>
                 <ButtonLink href="#features" size="lg" variant="outline">
@@ -197,14 +197,14 @@ export default function LandingPage() {
           <div className="mx-auto max-w-3xl px-4 text-center sm:px-6">
             <h2 className="text-3xl font-semibold tracking-tight text-navy-900">Ready to sign your first agreement?</h2>
             <p className="mt-4 text-lg text-slate-600">
-              Explore the dashboard with realistic demo data. No funds or deployment required.
+              Pick your role, connect MetaMask, or explore the demo with realistic data. No funds needed.
             </p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
-              <ButtonLink href="/agreements/create" size="lg">
-                Create an Agreement
+              <ButtonLink href="/signup" size="lg">
+                Create an Account
               </ButtonLink>
-              <ButtonLink href="/dashboard" size="lg" variant="outline">
-                Open Dashboard
+              <ButtonLink href="/login" size="lg" variant="outline">
+                Sign in
               </ButtonLink>
             </div>
           </div>

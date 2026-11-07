@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { WalletProvider } from "@/components/wallet/wallet-provider";
 import { ToastProvider } from "@/components/providers/toast-provider";
 import { AppStoreProvider } from "@/components/providers/app-store";
+import { AuthProvider } from "@/components/auth/auth-provider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -34,7 +35,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body suppressHydrationWarning>
         <ToastProvider>
           <WalletProvider>
-            <AppStoreProvider>{children}</AppStoreProvider>
+            <AuthProvider>
+              <AppStoreProvider>{children}</AppStoreProvider>
+            </AuthProvider>
           </WalletProvider>
         </ToastProvider>
       </body>

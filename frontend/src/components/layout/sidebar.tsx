@@ -1,19 +1,21 @@
 "use client";
 
 import { Suspense } from "react";
-import Link from "next/link";
+import Link from "@/components/space/link";
 import { usePathname } from "next/navigation";
 import { ShieldCheck, X } from "lucide-react";
 import { useAppStore } from "@/components/providers/app-store";
 import { cn } from "@/lib/utils";
 import { Logo } from "./logo";
-import { APP_NAV, isActive } from "./navigation";
+import { useSpace } from "@/components/space/space-provider";
+import { isActive, navFor, stripSpace } from "./navigation";
 
 function NavLinks({ pathname, onNavigate }: { pathname: string | null; onNavigate?: () => void }) {
+  const role = useSpace() ?? "client";
   return (
     <ul className="space-y-1">
-      {APP_NAV.map((item) => {
-        const active = pathname ? isActive(pathname, item) : false;
+      {navFor(role).map((item) => {
+        const active = pathname ? isActive(stripSpace(pathname), item) : false;
         const Icon = item.icon;
         return (
           <li key={item.href}>
@@ -51,13 +53,14 @@ function ActiveNavLinks({ onNavigate }: { onNavigate?: () => void }) {
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const { mode } = useAppStore();
+  const role = useSpace();
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-16 items-center px-5">
         <Logo href="/" light />
       </div>
       <nav aria-label="Main" className="flex-1 overflow-y-auto px-3 py-4">
-        <p className="mb-2 px-3 text-[11px] font-semibold tracking-wider text-slate-500 uppercase">Workspace</p>
+        <p className="mb-2 px-3 text-[11px] font-semibold tracking-wider text-slate-500 uppercase">{role === "freelancer" ? "Freelancer space" : "Client space"}</p>
         <Suspense fallback={<NavLinks pathname={null} onNavigate={onNavigate} />}>
           <ActiveNavLinks onNavigate={onNavigate} />
         </Suspense>

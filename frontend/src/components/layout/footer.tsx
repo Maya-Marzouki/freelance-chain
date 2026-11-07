@@ -5,10 +5,8 @@ const COLUMNS = [
   {
     title: "Product",
     links: [
-      { href: "/dashboard", label: "Dashboard" },
-      { href: "/agreements", label: "Agreements" },
-      { href: "/agreements/create", label: "Create Agreement" },
-      { href: "/escrow", label: "Escrow & Milestones" },
+      { href: "/login", label: "Sign in" },
+      { href: "/signup", label: "Create an account" },
     ],
   },
   {
@@ -16,8 +14,6 @@ const COLUMNS = [
     links: [
       { href: "/#features", label: "Features" },
       { href: "/#how-it-works", label: "How it works" },
-      { href: "/activity", label: "Activity History" },
-      { href: "/settings", label: "Settings" },
     ],
   },
   {
@@ -70,7 +66,7 @@ export function Footer() {
       <div className="border-t border-slate-100">
         <div className="mx-auto flex max-w-7xl flex-col gap-2 px-4 py-6 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
           <p>© 2026 FreeLance Chain. Academic blockchain project.</p>
-          <p>Demo build: all transactions are simulated until the smart contracts are deployed.</p>
+          <p>Connect MetaMask to the local Hardhat network for real transactions; without a wallet the app runs in demo mode.</p>
         </div>
       </div>
     </footer>

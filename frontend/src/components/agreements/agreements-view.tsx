@@ -8,6 +8,7 @@ import { Input, Select } from "@/components/ui/input";
 import { EmptyState, PageHeader, Segmented, Skeleton } from "@/components/ui/misc";
 import { STATUS_META } from "@/components/ui/status-badge";
 import { useAppStore } from "@/components/providers/app-store";
+import { useScoped } from "@/components/space/use-scoped";
 import { useWallet } from "@/components/wallet/wallet-provider";
 import { AGREEMENT_STATUSES, type AgreementStatus } from "@/types/agreement";
 import { cn } from "@/lib/utils";
@@ -17,7 +18,8 @@ const PAGE_SIZE = 8;
 type Scope = "all" | "client" | "freelancer";
 
 export function AgreementsView() {
-  const { agreements, roleFor } = useAppStore();
+  const { roleFor } = useAppStore();
+  const { agreements } = useScoped();
   const wallet = useWallet();
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");

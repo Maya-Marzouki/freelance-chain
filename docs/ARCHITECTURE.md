@@ -78,6 +78,25 @@ Pour se faire rembourser avant le debut du travail : le client annule l'accord (
 
 Liberation d'un jalon : le contrat exige deux etapes (`approveMilestone` puis `releasePayment`). Le front les enchaine en un clic (deux confirmations MetaMask) ; si la seconde est refusee, le jalon reste `Approved` et peut etre libere plus tard.
 
+## Comptes et espaces par role
+
+Deux personnes seulement : le client et le freelance. Chacun s'inscrit en choisissant son role, puis accede a son espace.
+
+| Element | Fonctionnement |
+|---------|----------------|
+| Inscription (`/signup`) | choix du role, nom, connexion du portefeuille MetaMask. Pas de mot de passe : le portefeuille est l'identifiant |
+| Connexion (`/login`) | connexion du portefeuille ; si l'adresse a un compte, redirection vers `/<role>/dashboard`, sinon vers l'inscription |
+| Deconnexion | bouton dans la barre du haut (deconnecte aussi le portefeuille de l'application) |
+| Espaces | `/client/...` et `/freelancer/...` : navigation, tableau de bord et donnees propres a chaque role |
+| Gardes | sans session, retour a `/login` ; un client qui ouvre l'espace freelance (et inversement) est renvoye dans le sien, sur la meme page ; `Create Agreement` est reserve au client |
+| Demo | sans portefeuille, "Demo as client / freelancer" donne acces a des donnees d'exemple |
+
+Dans un espace, chacun ne voit que ses accords : le client ceux dont il est le client, le freelance ceux dont il est le freelance (avec leurs jalons, escrows et activite).
+
+Fichiers : `lib/profile.ts` (compte), `components/auth/` (session, pages), `components/space/` (contexte d'espace, liens, gardes), `app/[space]/` (pages des deux espaces).
+
+Limites assumees : le role et le nom sont stockes dans le navigateur (localStorage, par adresse et par origine) ; ce n'est pas une permission sur la blockchain, ou les donnees restent publiques. Les contrats imposent qui peut faire quoi sur chaque accord. Un compte cree sur `localhost:3000` n'existe pas sur un autre port.
+
 ## Reste a faire
 
 - Decider si le contrat gere les fonds (escrow en ETH + `ReentrancyGuard`) ou seulement l'etat de l'accord (voir `BRIEF_BINOME.md` : l'escrow est dans le contrat B).

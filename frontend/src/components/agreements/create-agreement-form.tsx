@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, useSyncExternalStore } from "react";
-import { useRouter } from "next/navigation";
+import { useSpaceRouter } from "@/components/space/use-space-router";
 import {
   ArrowRight,
   CalendarDays,
@@ -100,7 +100,7 @@ function Section({
 }
 
 export function CreateAgreementForm() {
-  const router = useRouter();
+  const router = useSpaceRouter();
   const toast = useToast();
   const wallet = useWallet();
   const { user, createAgreement, mode } = useAppStore();
@@ -459,7 +459,7 @@ export function CreateAgreementForm() {
           <SummaryRow label="Deadline" value={values.deadline ? formatDate(`${values.deadline}T00:00:00Z`) : ""} />
           <SummaryRow label="Terms hash" value={values.terms ? shortenHash(hashTerms(values.terms.trim())) : ""} mono />
         </dl>
-        {creating && <p className="mt-3 text-center text-xs text-slate-500">Simulating transaction confirmation…</p>}
+        {creating && <p className="mt-3 text-center text-xs text-slate-500">{mode === "chain" ? "Waiting for your confirmation in MetaMask, then for the blockchain…" : "Simulating transaction confirmation…"}</p>}
       </ConfirmDialog>
 
       {/* Success */}

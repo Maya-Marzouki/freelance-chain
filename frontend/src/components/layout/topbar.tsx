@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { Bell, Menu, Search } from "lucide-react";
+import Link from "@/components/space/link";
+import { useSpaceRouter } from "@/components/space/use-space-router";
+import { Bell, LogOut, Menu, Search } from "lucide-react";
 import { AddressAvatar } from "@/components/ui/address";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ConnectWallet } from "@/components/wallet/connect-wallet";
-import { useAppStore } from "@/components/providers/app-store";
+import { useScoped } from "@/components/space/use-scoped";
+import { useAuth } from "@/components/auth/auth-provider";
 import { MOCK_NOTIFICATIONS } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 
@@ -30,8 +31,8 @@ function useDismiss(open: boolean, close: () => void) {
 }
 
 function GlobalSearch() {
-  const { agreements } = useAppStore();
-  const router = useRouter();
+  const { agreements } = useScoped();
+  const router = useSpaceRouter();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const ref = useDismiss(open, () => setOpen(false));
@@ -178,7 +179,8 @@ function Notifications() {
 }
 
 export function Topbar({ onMenu }: { onMenu: () => void }) {
-  const { user } = useAppStore();
+  const { profile, demo, signOut } = useAuth();
+  const router = useSpaceRouter();
   return (
     <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/85 backdrop-blur-md">
       <div className="flex h-16 items-center gap-3 px-4 sm:px-6 lg:px-8">
@@ -201,12 +203,27 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
             className="hidden items-center gap-2.5 rounded-lg py-1 pr-2 pl-1 transition hover:bg-slate-100 md:flex"
             aria-label="Profile settings"
           >
-            <AddressAvatar address={user.address} size={32} className="ring-0" />
+            <AddressAvatar address={profile?.address ?? ""} size={32} className="ring-0" />
             <span className="hidden text-left xl:block">
-              <span className="block text-sm leading-tight font-medium text-navy-900">{user.name}</span>
-              <span className="block text-xs leading-tight text-slate-500">{user.title}</span>
+              <span className="block text-sm leading-tight font-medium text-navy-900">{profile?.name}</span>
+              <span className="block text-xs leading-tight text-slate-500 capitalize">
+                {profile?.role}
+                {demo ? " · demo" : ""}
+              </span>
             </span>
           </Link>
+          <button
+            type="button"
+            onClick={async () => {
+              await signOut();
+              router.replace("/login");
+            }}
+            className="flex size-9 cursor-pointer items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-navy-900"
+            aria-label="Sign out"
+            title="Sign out"
+          >
+            <LogOut className="size-[18px]" />
+          </button>
         </div>
       </div>
       <div className="border-t border-slate-100 px-4 py-2 sm:hidden">
