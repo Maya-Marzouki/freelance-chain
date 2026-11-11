@@ -25,7 +25,7 @@ Created --accept--> Accepted --start--> InProgress --deliver--> Delivered --appr
 | `acceptAgreement` | freelance | Created | Accepted |
 | `startWork` | freelance | Accepted, **escrow finance** (`EscrowNotFunded` sinon) | InProgress |
 | `markDelivered` | freelance | InProgress, moins de 100 % de penalite (`DeliveryExpired` sinon) | Delivered |
-| `approveDelivery` | client | Delivered | Completed, et l'escrow paie le freelance (moins la penalite) |
+| `approveDelivery` | client | Delivered, aucun jalon soumis en attente (`MilestonesAwaitingReview` sinon) | Completed, et l'escrow paie le freelance (moins la penalite) |
 | `cancel` | client | Created / Accepted | Cancelled |
 | `cancelOverdue` | client | Accepted / InProgress, apres l'echeance | Cancelled |
 | `cancelExpired` | n'importe qui | Accepted / InProgress, 100e jour de retard | Cancelled, l'escrow rembourse le client |
@@ -34,6 +34,7 @@ Created --accept--> Accepted --start--> InProgress --deliver--> Delivered --appr
 
 - **Demarrage** : `startWork` exige que le client ait depose le paiement (`EscrowMilestones.isFunded`). Le freelance ne travaille jamais sans garantie d'etre paye.
 - **Fin de l'accord** : chaque fonction qui termine l'accord (`approveDelivery`, `cancel`, `cancelOverdue`, `cancelExpired`, `concede`, `resolveDispute`) appelle `EscrowMilestones.settleAgreement` dans la meme transaction. Il n'y a plus d'etape "settle" separee ; `settle(escrowId)` reste disponible en secours.
+- **Aucun sprint paye sans verification** : soumettre un jalon ne deplace aucun ETH. Tant qu'un jalon soumis n'a pas ete approuve (`EscrowMilestones.pendingReviews`), le client ne peut pas valider la livraison finale, sinon le reglement paierait ce sprint sans qu'il l'ait verifie. A la validation, les jalons restants passent a `Released`.
 - **Lien A -> B** : B lit A (constructeur), A appelle B. Le deployeur relie A a B une seule fois (`setEscrowContract`, dans `scripts/deploy.js`). L'appel externe a lieu apres la mise a jour du statut (checks-effects-interactions), et B est protege par `ReentrancyGuard`.
 
 ### Penalite de retard

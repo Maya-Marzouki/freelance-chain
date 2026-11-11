@@ -6,6 +6,7 @@ import "./IServiceAgreement.sol";
 /// @dev Ce que A utilise du contrat d'escrow (B), relie une seule fois apres le deploiement.
 interface IEscrowLink {
     function isFunded(uint256 agreementId) external view returns (bool);
+    function pendingReviews(uint256 agreementId) external view returns (uint256);
     function settleAgreement(uint256 agreementId) external;
 }
 
@@ -73,6 +74,8 @@ contract ServiceAgreement is IServiceAgreement {
     /// @notice 100 % de penalite atteints : livrer ne sert plus a rien, l'accord doit etre annule.
     error DeliveryExpired();
     error NotExpired();
+    /// @notice Des jalons soumis attendent la validation du client : il les verifie avant de tout payer.
+    error MilestonesAwaitingReview(uint256 count);
 
     constructor() {
         deployer = msg.sender;
@@ -147,9 +150,15 @@ contract ServiceAgreement is IServiceAgreement {
 
     /// @notice Le client valide : l'escrow paie aussitot le freelance, moins la penalite de
     ///         retard (`latePenaltyPercent`), et rend cette penalite au client.
+    ///         Refuse tant qu'un jalon soumis n'a pas ete approuve : aucun sprint n'est paye
+    ///         sans que le client l'ait verifie.
     function approveDelivery(uint256 id) external {
         Agreement storage a = _get(id);
         if (msg.sender != a.client) revert NotClient();
+        if (address(escrowContract) != address(0)) {
+            uint256 pending = escrowContract.pendingReviews(id);
+            if (pending > 0) revert MilestonesAwaitingReview(pending);
+        }
 
         _transition(id, a, Status.Delivered, Status.Completed);
         _settle(id);

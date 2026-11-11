@@ -401,6 +401,17 @@ contract EscrowMilestones is ReentrancyGuard {
         return escrowId != 0 && escrows[escrowId].depositedAmount > 0;
     }
 
+    /// @notice Nombre de jalons soumis que le client n'a pas encore approuves.
+    /// @dev A refuse `approveDelivery` tant qu'il en reste : le client verifie chaque sprint avant de payer.
+    function pendingReviews(uint256 agreementId) external view returns (uint256 count) {
+        uint256 escrowId = escrowOfAgreement[agreementId];
+        if (escrowId == 0) return 0;
+        uint256 n = escrows[escrowId].milestoneCount;
+        for (uint256 i = 0; i < n; i++) {
+            if (milestones[escrowId][i].status == MilestoneStatus.Submitted) count++;
+        }
+    }
+
     function _settle(uint256 escrowId) private {
         Escrow storage escrow = escrows[escrowId];
 
@@ -440,6 +451,14 @@ contract EscrowMilestones is ReentrancyGuard {
             ? EscrowStatus.Completed
             : EscrowStatus.Cancelled;
         escrow.releasedAmount += toFreelancer;
+
+        // Accord termine en faveur du freelance : les jalons restants sont regles par ce paiement,
+        // leur statut le reflete (plus aucun jalon "en attente" deja paye).
+        if (freelancerPaid) {
+            for (uint256 i = 0; i < escrow.milestoneCount; i++) {
+                milestones[escrowId][i].status = MilestoneStatus.Released;
+            }
+        }
 
         if (toFreelancer > 0) escrow.freelancer.transfer(toFreelancer);
         if (toClient > 0) escrow.client.transfer(toClient);
