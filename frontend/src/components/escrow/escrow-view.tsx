@@ -41,7 +41,7 @@ interface Pending {
 }
 
 export function EscrowView() {
-  const { roleFor, performMilestoneAction, mode } = useAppStore();
+  const { roleFor, performMilestoneAction, mode, escrowError } = useAppStore();
   const { agreements, milestones, escrows: chainEscrows } = useScoped();
   const live = mode === "chain";
   const wallet = useWallet();
@@ -180,7 +180,12 @@ export function EscrowView() {
       </div>
 
       <div className="mt-6 space-y-4">
-        {escrows.length === 0 && (
+        {escrowError && (
+          <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800" role="alert">
+            {escrowError}
+          </p>
+        )}
+        {escrows.length === 0 && !escrowError && (
           <Card>
             <EmptyState
               icon={<LockKeyhole />}

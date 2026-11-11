@@ -72,7 +72,7 @@ describe("ReputationToken", function () {
 
     await expect(token.connect(stranger).claimReward(1))
       .to.emit(token, "ReputationRewarded")
-      .withArgs(1, freelancer.address, client.address, freelancerReward, clientReward);
+      .withArgs(1, freelancer.address, client.address, freelancerReward, clientReward, true);
 
     expect(await token.balanceOf(freelancer.address)).to.equal(ethers.parseEther("300"));
     expect(await token.balanceOf(client.address)).to.equal(ethers.parseEther("60"));
@@ -93,6 +93,40 @@ describe("ReputationToken", function () {
 
     await token.claimReward(1);
     expect(await token.balanceOf(freelancer.address)).to.equal(ethers.parseEther("300"));
+  });
+
+  describe("condition de deadline", function () {
+    it("livre a temps : le freelance recoit 100 %", async function () {
+      await completeMission();
+      expect(await token.isDeliveredOnTime(1)).to.equal(true);
+      await token.claimReward(1);
+      expect(await token.balanceOf(freelancer.address)).to.equal(ethers.parseEther("300"));
+    });
+
+    it("livre en retard : le freelance recoit 50 %, le client sa part complete", async function () {
+      await createFundAndStart();
+      await time.increaseTo(deadline + 1);
+      await deliverAndApprove();
+      await escrow.settle(1);
+
+      expect(await token.isDeliveredOnTime(1)).to.equal(false);
+      await expect(token.claimReward(1))
+        .to.emit(token, "ReputationRewarded")
+        .withArgs(1, freelancer.address, client.address, ethers.parseEther("150"), ethers.parseEther("60"), false);
+      expect(await token.balanceOf(freelancer.address)).to.equal(ethers.parseEther("150"));
+      expect(await token.balanceOf(client.address)).to.equal(ethers.parseEther("60"));
+    });
+
+    it("jamais livre (le client cede pendant le travail) : compte comme en retard", async function () {
+      await createFundAndStart();
+      await agreements.connect(client).raiseDispute(1);
+      await agreements.connect(client).concede(1); // Completed sans markDelivered
+      await escrow.settle(1);
+
+      expect(await token.isDeliveredOnTime(1)).to.equal(false);
+      await token.claimReward(1);
+      expect(await token.balanceOf(freelancer.address)).to.equal(ethers.parseEther("150"));
+    });
   });
 
   it("refuse une deuxieme recompense pour le meme accord", async function () {

@@ -118,6 +118,7 @@ Token ERC-20 de reputation, **non transferable** (soulbound). Le paiement reste 
 | Frappe | `claimReward(agreementId)`, appelable par n'importe qui |
 | Conditions | accord `Completed` (A) **et** escrow `Completed` (B), donc freelance paye en totalite ; une seule fois par accord |
 | Montants | freelance : 100 FLR par ETH paye ; client : 20 FLR par ETH paye (`FREELANCER_RATE`, `CLIENT_RATE`) |
+| Condition de deadline | `isDeliveredOnTime(id)` : livre (`deliveredAt` de A) au plus tard a l'echeance. Sinon (en retard, ou accord termine sans livraison), le freelance ne recoit que `LATE_REWARD_PERCENT` = 50 %. Le client, qui a paye en totalite, garde sa part complete. L'evenement `ReputationRewarded` indique `onTime` |
 | Compteur | `missionsCompleted(adresse)` : nombre de missions recompensees |
 | Transferts | `transfer`, `transferFrom` et `approve` revertent (`TransferDisabled`) : la reputation ne s'achete pas |
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Award, BadgeCheck, Hourglass, Info } from "lucide-react";
+import { Award, BadgeCheck, Clock, Hourglass, Info } from "lucide-react";
 import Link from "@/components/space/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -12,14 +12,35 @@ import { useToast } from "@/components/providers/toast-provider";
 import { useScoped } from "@/components/space/use-scoped";
 import { useSpace } from "@/components/space/space-provider";
 import { useWallet } from "@/components/wallet/wallet-provider";
-import { CLIENT_RATE, FREELANCER_RATE, claimReputation, isReputationDeployed } from "@/lib/reputation-contract";
+import {
+  CLIENT_RATE,
+  FREELANCER_RATE,
+  LATE_REWARD_PERCENT,
+  claimReputation,
+  expectedRewards,
+  isDeliveredOnTime,
+  isReputationDeployed,
+} from "@/lib/reputation-contract";
 import { formatDateTime, formatEth, sameAddress, shortenHash } from "@/lib/utils";
 
 const formatFlr = (value: number) => `${value.toLocaleString("en-US", { maximumFractionDigits: 2 })} FLR`;
 
+/** On time: full reward. Late or never delivered: the freelancer's share is reduced. */
+function DeadlineBadge({ onTime }: { onTime: boolean }) {
+  return onTime ? (
+    <span className="ml-2 inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 ring-1 ring-emerald-100 ring-inset">
+      Delivered on time
+    </span>
+  ) : (
+    <span className="ml-2 inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 ring-1 ring-amber-100 ring-inset">
+      Late delivery: freelancer {LATE_REWARD_PERCENT}%
+    </span>
+  );
+}
+
 /** Rewards tab: FLR earned, agreements ready to claim, and the reward history. */
 export function RewardsView() {
-  const { mode, rewards, refresh } = useAppStore();
+  const { mode, rewards, rewardsError, refresh } = useAppStore();
   const { agreements, escrows } = useScoped();
   const space = useSpace();
   const wallet = useWallet();
@@ -68,6 +89,12 @@ export function RewardsView() {
         description="Soulbound FLR reputation, earned by finishing missions that were paid in full."
       />
 
+      {rewardsError && (
+        <p className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800" role="alert">
+          {rewardsError}
+        </p>
+      )}
+
       {!live ? (
         <Card>
           <EmptyState
@@ -114,6 +141,14 @@ export function RewardsView() {
               (freelancer {FREELANCER_RATE} FLR per ETH, client {CLIENT_RATE} FLR per ETH).
             </p>
           </div>
+          <div className="mt-3 flex items-start gap-2.5 rounded-xl bg-slate-50 p-3.5 text-sm text-slate-600">
+            <Clock className="mt-0.5 size-4 shrink-0 text-slate-400" aria-hidden />
+            <p>
+              Deadline rule: the freelancer gets the full reward only if the work was delivered by the agreement
+              deadline. Delivered late, or never delivered, it is cut to {LATE_REWARD_PERCENT}%. The client, who paid in
+              full, always gets their full share.
+            </p>
+          </div>
 
           <Card className="mt-6">
             <CardHeader title="Ready to claim" description="Completed agreements whose escrow paid the freelancer in full" />
@@ -123,6 +158,8 @@ export function RewardsView() {
               <ul className="divide-y divide-slate-100">
                 {claimable.map(({ agreement, escrow }) => {
                   const paid = escrow?.releasedEth ?? 0;
+                  const onTime = isDeliveredOnTime(agreement);
+                  const expected = expectedRewards(paid, onTime);
                   return (
                     <li key={agreement.id} className="flex flex-wrap items-center gap-4 px-5 py-4 sm:px-6">
                       <div className="min-w-0 flex-1">
@@ -133,8 +170,10 @@ export function RewardsView() {
                           {agreement.title}
                         </Link>
                         <p className="text-xs text-slate-500">
-                          {agreement.id} · {formatEth(paid)} paid · you will receive {formatFlr(paid * rate)}
+                          {agreement.id} · {formatEth(paid)} paid · you will receive{" "}
+                          {formatFlr(shareOf(expected))}
                         </p>
+                        <DeadlineBadge onTime={onTime} />
                       </div>
                       <Button
                         size="sm"
@@ -175,7 +214,10 @@ export function RewardsView() {
                           </Link>
                           <p className="text-xs text-slate-500">{r.agreementId}</p>
                         </td>
-                        <td className="px-5 py-3 font-medium whitespace-nowrap text-violet-700">+{formatFlr(shareOf(r))}</td>
+                        <td className="px-5 py-3 whitespace-nowrap">
+                          <span className="font-medium text-violet-700">+{formatFlr(shareOf(r))}</span>
+                          <DeadlineBadge onTime={r.onTime} />
+                        </td>
                         <td className="px-5 py-3 whitespace-nowrap text-slate-600">{formatDateTime(r.date)}</td>
                         <td className="px-5 py-3 font-mono text-xs text-slate-500">{shortenHash(r.txHash)}</td>
                       </tr>

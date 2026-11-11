@@ -155,10 +155,12 @@ export async function readAgreements(contract: Contract, provider: Provider): Pr
 
   // Deliverable (hash + link) of every agreement that reached Delivered.
   const deliverables = new Map<number, Deliverable>();
+  const deliveredAt = new Map<number, string>();
   await Promise.all(
     structs.map(async (a) => {
-      const d = await contract.deliverables(a.id);
+      const [d, at] = await Promise.all([contract.deliverables(a.id), contract.deliveredAt(a.id) as Promise<bigint>]);
       if (d.hash !== ZERO_HASH) deliverables.set(Number(a.id), { hash: d.hash, uri: d.uri });
+      if (at > BigInt(0)) deliveredAt.set(Number(a.id), new Date(Number(at) * 1000).toISOString());
     }),
   );
 
@@ -189,6 +191,7 @@ export async function readAgreements(contract: Contract, provider: Provider): Pr
         timeline: events,
         dispute: disputes.get(id),
         deliverable: deliverables.get(id),
+        deliveredAt: deliveredAt.get(id),
       };
     })
     .sort((a, b) => b.onChainId - a.onChainId);

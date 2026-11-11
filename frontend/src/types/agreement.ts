@@ -76,6 +76,8 @@ export interface Agreement {
   dispute?: DisputeInfo;
   /** Deliverable submitted by the freelancer: link and keccak256 hash of its content. */
   deliverable?: Deliverable;
+  /** When the freelancer called `markDelivered` (ISO, live mode). Decides the on-time reward. */
+  deliveredAt?: string;
 }
 
 /** Proof of a delivery: the file stays off-chain, only its hash is on-chain. */
