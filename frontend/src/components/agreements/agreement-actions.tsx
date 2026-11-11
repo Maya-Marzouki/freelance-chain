@@ -15,6 +15,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Field, Input } from "@/components/ui/input";
+import { hashLink, isValidLink } from "@/lib/deliverable";
 import { Card, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/modal";
 import { Segmented } from "@/components/ui/misc";
@@ -30,7 +32,7 @@ import {
   type ActionDefinition,
 } from "@/lib/lifecycle";
 import { formatDateTime, formatEth, shortenAddress } from "@/lib/utils";
-import type { Agreement, AgreementAction, Role } from "@/types/agreement";
+import type { Agreement, AgreementAction, Deliverable, Role } from "@/types/agreement";
 
 const ICONS: Record<AgreementAction, LucideIcon> = {
   accept: Handshake,
@@ -65,6 +67,9 @@ export function AgreementActions({ agreement, actualRole, role, onRoleChange }: 
   const toast = useToast();
   const [pending, setPending] = useState<ActionDefinition | null>(null);
   const [loading, setLoading] = useState(false);
+  // Delivery form (only used by the "deliver" action).
+  const [deliveryLink, setDeliveryLink] = useState("");
+  const [deliveryError, setDeliveryError] = useState<string | null>(null);
 
   const live = mode === "chain";
   // On-chain the role comes from the wallet and cannot be simulated.
@@ -81,9 +86,19 @@ export function AgreementActions({ agreement, actualRole, role, onRoleChange }: 
 
   async function confirm() {
     if (!pending) return;
+    let deliverable: Deliverable | undefined;
+    if (pending.action === "deliver") {
+      if (!isValidLink(deliveryLink)) {
+        setDeliveryError("Enter a valid link (https:// or ipfs://) to your deliverable.");
+        return;
+      }
+      setDeliveryError(null);
+      const uri = deliveryLink.trim();
+      deliverable = { uri, hash: hashLink(uri) };
+    }
     setLoading(true);
     try {
-      await performAction(agreement.id, pending.action, actor);
+      await performAction(agreement.id, pending.action, actor, deliverable);
       toast.success(
         `${ACTIONS[pending.action].label}: done`,
         live ? "Transaction confirmed on the blockchain." : "Status updated. Transaction simulated locally.",
@@ -228,6 +243,28 @@ export function AgreementActions({ agreement, actualRole, role, onRoleChange }: 
           })()
         }
       >
+        {pending?.action === "deliver" && (
+          <div className="mb-4 space-y-4">
+            <Field
+              label="Link to the deliverable"
+              error={deliveryError ?? undefined}
+              hint="Where the client can open the work: shared drive, GitHub repository, IPFS…"
+            >
+              {({ id, describedBy, invalid }) => (
+                <Input
+                  id={id}
+                  aria-describedby={describedBy}
+                  invalid={invalid}
+                  type="url"
+                  placeholder="https://…"
+                  value={deliveryLink}
+                  onChange={(e) => setDeliveryLink(e.target.value)}
+                  disabled={loading}
+                />
+              )}
+            </Field>
+          </div>
+        )}
         {pending && (
           <dl className="space-y-2 rounded-xl border border-slate-100 bg-slate-50/60 p-4 text-sm">
             <div className="flex justify-between gap-3">

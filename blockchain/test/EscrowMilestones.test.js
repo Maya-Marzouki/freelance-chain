@@ -2,6 +2,9 @@ const { expect } = require("chai");
 const { ethers } = require("hardhat");
 const { time } = require("@nomicfoundation/hardhat-toolbox/network-helpers");
 
+const DELIVERABLE_URI = "https://example.com/livrable.zip";
+const DELIVERABLE_HASH = ethers.keccak256(ethers.toUtf8Bytes("contenu du livrable"));
+
 describe("EscrowMilestones", function () {
   let agreements;
   let escrow;
@@ -296,7 +299,7 @@ describe("EscrowMilestones", function () {
     it("Should pay the freelancer the remaining funds once the agreement is completed", async function () {
       await createFundedEscrow();
       await agreements.connect(freelancer).startWork(1);
-      await agreements.connect(freelancer).markDelivered(1);
+      await agreements.connect(freelancer).markDelivered(1, DELIVERABLE_HASH, DELIVERABLE_URI);
       await agreements.connect(client).approveDelivery(1);
 
       await expect(

@@ -24,12 +24,21 @@ contract ServiceAgreement is IServiceAgreement {
     /// @notice Horodatage de la livraison (0 si rien n'a ete livre).
     mapping(uint256 => uint256) public deliveredAt;
 
+    /// @dev Preuve du livrable : hash du contenu et lien pour le consulter.
+    struct Deliverable {
+        bytes32 hash;
+        string uri;
+    }
+    /// @notice Livrable soumis par le freelance (hash nul si rien n'a ete livre).
+    mapping(uint256 => Deliverable) public deliverables;
+
     event AgreementCreated(
         uint256 indexed id,
         address indexed client,
         address indexed freelancer
     );
     event StatusChanged(uint256 indexed id, Status oldStatus, Status newStatus);
+    event DeliverySubmitted(uint256 indexed id, bytes32 deliverableHash, string uri);
     /// @param byDefault true si la regle automatique a tranche, false si une partie a cede.
     event DisputeResolved(uint256 indexed id, bool favorFreelancer, bool byDefault);
 
@@ -84,12 +93,19 @@ contract ServiceAgreement is IServiceAgreement {
         _transition(id, a, Status.Accepted, Status.InProgress);
     }
 
-    function markDelivered(uint256 id) external {
+    /// @notice Le freelance livre : il fournit un lien vers le livrable et son hash keccak256.
+    /// @dev Comme `termsHash`, seul le hash prouve le contenu : le fichier reste hors chaine.
+    ///      Le contrat ne juge pas la qualite ; le client valide ou ouvre un litige.
+    function markDelivered(uint256 id, bytes32 deliverableHash, string calldata uri) external {
         Agreement storage a = _get(id);
         if (msg.sender != a.freelancer) revert NotFreelancer();
+        if (deliverableHash == bytes32(0) || bytes(uri).length == 0) revert InvalidParameters();
 
         _transition(id, a, Status.InProgress, Status.Delivered);
         deliveredAt[id] = block.timestamp;
+        deliverables[id] = Deliverable({hash: deliverableHash, uri: uri});
+
+        emit DeliverySubmitted(id, deliverableHash, uri);
     }
 
     function approveDelivery(uint256 id) external {

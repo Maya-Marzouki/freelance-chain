@@ -42,6 +42,7 @@ import type {
   AgreementEvent,
   AgreementStatus,
   CreateAgreementInput,
+  Deliverable,
   Escrow,
   EscrowMilestoneInput,
   Milestone,
@@ -58,7 +59,14 @@ interface State {
 
 type Event =
   | { type: "create"; agreement: Agreement }
-  | { type: "transition"; id: string; action: AgreementAction; to: AgreementStatus; event: AgreementEvent }
+  | {
+      type: "transition";
+      id: string;
+      action: AgreementAction;
+      to: AgreementStatus;
+      event: AgreementEvent;
+      deliverable?: Deliverable;
+    }
   | { type: "milestone"; id: string; action: MilestoneAction; item: ActivityItem };
 
 function reducer(state: State, e: Event): State {
@@ -69,7 +77,9 @@ function reducer(state: State, e: Event): State {
       return {
         ...state,
         agreements: state.agreements.map((a) =>
-          a.id === e.id ? { ...a, status: e.to, timeline: [...a.timeline, e.event] } : a,
+          a.id === e.id
+            ? { ...a, status: e.to, timeline: [...a.timeline, e.event], deliverable: e.deliverable ?? a.deliverable }
+            : a,
         ),
         milestones:
           e.action === "approve"
@@ -115,7 +125,13 @@ interface StoreValue extends State {
   getAgreement: (id: string) => Agreement | undefined;
   roleFor: (agreement: Agreement, address?: string | null) => Role;
   createAgreement: (input: CreateAgreementInput) => Promise<Agreement>;
-  performAction: (agreementId: string, action: AgreementAction, actor: string) => Promise<AgreementEvent>;
+  /** `deliverable` is required for the "deliver" action. */
+  performAction: (
+    agreementId: string,
+    action: AgreementAction,
+    actor: string,
+    deliverable?: Deliverable,
+  ) => Promise<AgreementEvent>;
   performMilestoneAction: (milestoneId: string, action: MilestoneAction, actor: string) => Promise<string>;
 }
 
@@ -279,13 +295,14 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   );
 
   const performAction = useCallback(
-    async (agreementId: string, action: AgreementAction, actor: string) => {
+    async (agreementId: string, action: AgreementAction, actor: string, deliverable?: Deliverable) => {
+    if (action === "deliver" && !deliverable) throw new Error("Add a link to your deliverable before submitting.");
     if (chainMode) {
       const target = agreements.find((a) => a.id === agreementId);
       if (!target) throw new Error("Agreement not found on the blockchain.");
       const contract = await getServiceAgreementContract();
       try {
-        const txHash = await sendAction(contract, action, target.onChainId);
+        const txHash = await sendAction(contract, action, target.onChainId, deliverable);
         await loadChain().catch(() => undefined);
         return {
           id: `${agreementId}-${ACTIONS[action].event}-${txHash}`,
@@ -307,7 +324,14 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       txHash: randomHex(),
     };
     const current = state.agreements.find((a) => a.id === agreementId);
-    dispatch({ type: "transition", id: agreementId, action, to: current ? actionTarget(action, current) : ACTIONS[action].to, event });
+    dispatch({
+      type: "transition",
+      id: agreementId,
+      action,
+      to: current ? actionTarget(action, current) : ACTIONS[action].to,
+      event,
+      deliverable,
+    });
     return event;
     },
     [chainMode, agreements, wallet.address, loadChain, state.agreements],

@@ -97,6 +97,14 @@ Fichiers : `lib/profile.ts` (compte), `components/auth/` (session, pages), `comp
 
 Limites assumees : le role et le nom sont stockes dans le navigateur (localStorage, par adresse et par origine) ; ce n'est pas une permission sur la blockchain, ou les donnees restent publiques. Les contrats imposent qui peut faire quoi sur chaque accord. Un compte cree sur `localhost:3000` n'existe pas sur un autre port.
 
+## Livrable : preuve de livraison
+
+`markDelivered(id, deliverableHash, uri)` : le freelance fournit le lien vers son travail (depot, drive, IPFS). Le front calcule `deliverableHash` = keccak256 du lien. Le contrat stocke les deux dans `deliverables[id]` et emet `DeliverySubmitted`. Un hash nul ou un lien vide sont refuses (`InvalidParameters`).
+
+Le client ouvre le lien dans la carte "Deliverable" de la page detail, puis valide (`approveDelivery`) ou ouvre un litige (`raiseDispute`).
+
+Le contrat garantit **qui** a livre, **quand** (`deliveredAt`) et **ou** (le lien enregistre, qui ne peut plus changer). Il ne juge pas la qualite, et il ne fige pas le contenu derriere le lien : un depot peut encore evoluer. Pour figer le contenu, on peut donner un lien vers un commit ou un tag precis (ou un CID IPFS).
+
 ## Contrat C : `ReputationToken` (token FLR)
 
 Token ERC-20 de reputation, **non transferable** (soulbound). Le paiement reste en ETH dans l'escrow (B) : FLR ne sert qu'a mesurer l'historique d'un compte.

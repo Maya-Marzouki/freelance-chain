@@ -68,7 +68,7 @@ export const ACTIONS: Record<AgreementAction, ActionDefinition> = {
     event: "DeliverySubmitted",
     tone: "primary",
     confirmTitle: "Submit your delivery?",
-    confirmBody: "The client will review the delivery and can approve it or raise a dispute.",
+    confirmBody: "Share a link to your work. Its hash is recorded on-chain as proof; the client reviews it and can approve it or raise a dispute.",
   },
   approve: {
     action: "approve",

@@ -66,7 +66,7 @@ Created --accept--> Accepted --start--> InProgress --deliver--> Delivered --appr
 | `createAgreement` | client | - | Created (fait) |
 | `acceptAgreement` | freelance | Created | Accepted (fait) |
 | `startWork` | freelance | Accepted | InProgress |
-| `markDelivered` | freelance | InProgress | Delivered |
+| `markDelivered(id, hash, uri)` | freelance | InProgress | Delivered, avec la preuve du livrable (hash + lien) |
 | `approveDelivery` | client | Delivered | Completed |
 | `cancel` | client | Created ou Accepted | Cancelled |
 | `raiseDispute` | client ou freelance | InProgress ou Delivered | Disputed |

@@ -74,6 +74,14 @@ export interface Agreement {
   timeline: AgreementEvent[];
   /** Present when the agreement was ever disputed (live mode). */
   dispute?: DisputeInfo;
+  /** Deliverable submitted by the freelancer: link and keccak256 hash of its content. */
+  deliverable?: Deliverable;
+}
+
+/** Proof of a delivery: the file stays off-chain, only its hash is on-chain. */
+export interface Deliverable {
+  hash: string;
+  uri: string;
 }
 
 /** Mirrors `EscrowMilestones.MilestoneStatus`; the demo flow never uses "Approved". */

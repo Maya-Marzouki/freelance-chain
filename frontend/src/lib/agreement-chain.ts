@@ -15,6 +15,7 @@ import {
   type AgreementEvent,
   type AgreementStatus,
   type CreateAgreementInput,
+  type Deliverable,
   type DisputeInfo,
   type Party,
 } from "@/types/agreement";
@@ -29,6 +30,8 @@ const STATUS_EVENT: Record<AgreementStatus, ActivityType> = {
   Cancelled: "AgreementCancelled",
   Disputed: "DisputeRaised",
 };
+
+const ZERO_HASH = `0x${"0".repeat(64)}`;
 
 const statusOf = (value: bigint | number): AgreementStatus => AGREEMENT_STATUSES[Number(value)] ?? "Created";
 
@@ -150,6 +153,15 @@ export async function readAgreements(contract: Contract, provider: Provider): Pr
       }),
   );
 
+  // Deliverable (hash + link) of every agreement that reached Delivered.
+  const deliverables = new Map<number, Deliverable>();
+  await Promise.all(
+    structs.map(async (a) => {
+      const d = await contract.deliverables(a.id);
+      if (d.hash !== ZERO_HASH) deliverables.set(Number(a.id), { hash: d.hash, uri: d.uri });
+    }),
+  );
+
   const creationTx = new Map(created.map((l) => [Number((l as unknown as { args: { id: bigint } }).args.id), l.transactionHash]));
 
   return structs
@@ -176,6 +188,7 @@ export async function readAgreements(contract: Contract, provider: Provider): Pr
         documentName: meta?.documentName,
         timeline: events,
         dispute: disputes.get(id),
+        deliverable: deliverables.get(id),
       };
     })
     .sort((a, b) => b.onChainId - a.onChainId);
@@ -208,7 +221,12 @@ export async function createOnChain(
 }
 
 /** Sends the contract transaction matching a lifecycle action. Resolves with its hash. */
-export async function sendAction(contract: Contract, action: AgreementAction, onChainId: number): Promise<string> {
+export async function sendAction(
+  contract: Contract,
+  action: AgreementAction,
+  onChainId: number,
+  deliverable?: Deliverable,
+): Promise<string> {
   let tx;
   switch (action) {
     case "accept":
@@ -218,7 +236,8 @@ export async function sendAction(contract: Contract, action: AgreementAction, on
       tx = await contract.startWork(onChainId);
       break;
     case "deliver":
-      tx = await contract.markDelivered(onChainId);
+      if (!deliverable) throw new Error("Add a link to your deliverable before submitting.");
+      tx = await contract.markDelivered(onChainId, deliverable.hash, deliverable.uri);
       break;
     case "approve":
       tx = await contract.approveDelivery(onChainId);
