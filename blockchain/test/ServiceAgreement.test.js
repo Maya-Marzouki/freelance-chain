@@ -6,19 +6,29 @@ const DELIVERABLE_URI = "https://example.com/livrable.zip";
 const DELIVERABLE_HASH = ethers.keccak256(ethers.toUtf8Bytes("contenu du livrable"));
 
 describe("ServiceAgreement", function () {
-  let contract, client, freelancer, stranger, deadline;
+  let contract, escrow, client, freelancer, stranger, deadline;
+  const DAY = 24 * 3600;
+  const amount = ethers.parseEther("1");
   const termsHash = ethers.keccak256(ethers.toUtf8Bytes("conditions du contrat"));
 
   beforeEach(async function () {
     [client, freelancer, stranger] = await ethers.getSigners();
     contract = await ethers.deployContract("ServiceAgreement");
-    deadline = (await time.latest()) + 7 * 24 * 3600;
+    escrow = await ethers.deployContract("EscrowMilestones", [await contract.getAddress()]);
+    await contract.setEscrowContract(await escrow.getAddress());
+    deadline = (await time.latest()) + 7 * DAY;
   });
 
   async function create() {
     return contract
       .connect(client)
-      .createAgreement(freelancer.address, "Site vitrine", termsHash, ethers.parseEther("1"), deadline);
+      .createAgreement(freelancer.address, "Site vitrine", termsHash, amount, deadline);
+  }
+
+  /** Le client bloque le paiement (un seul jalon) : condition de startWork. */
+  async function fund() {
+    await escrow.connect(client).createEscrow(1, [amount], ["Tout"], ["Le site"], [deadline]);
+    await escrow.connect(client).deposit(1, { value: amount });
   }
 
   it("cree un accord avec le statut Created", async function () {
@@ -68,6 +78,7 @@ describe("ServiceAgreement", function () {
   async function createAndAccept() {
     await create();
     await contract.connect(freelancer).acceptAgreement(1);
+    await fund();
   }
   
   describe("startWork", function () {
@@ -89,8 +100,29 @@ describe("ServiceAgreement", function () {
 
   it("refuse si l'accord n'est pas Accepted", async function () {
     await create(); // statut Created : pas encore accepte
+    await escrow.connect(client).createEscrow(1, [amount], ["Tout"], ["Le site"], [deadline]);
     await expect(contract.connect(freelancer).startWork(1))
-      .to.be.revertedWithCustomError(contract, "InvalidStatus");
+      .to.be.revertedWithCustomError(contract, "EscrowNotFunded"); // rien depose
+  });
+
+  it("refuse tant que le client n'a pas finance l'escrow", async function () {
+    await create();
+    await contract.connect(freelancer).acceptAgreement(1);
+    await expect(contract.connect(freelancer).startWork(1))
+      .to.be.revertedWithCustomError(contract, "EscrowNotFunded"); // aucun escrow
+    await escrow.connect(client).createEscrow(1, [amount], ["Tout"], ["Le site"], [deadline]);
+    await expect(contract.connect(freelancer).startWork(1))
+      .to.be.revertedWithCustomError(contract, "EscrowNotFunded"); // escrow cree, pas finance
+    await escrow.connect(client).deposit(1, { value: amount });
+    await contract.connect(freelancer).startWork(1);
+    expect((await contract.getAgreement(1)).status).to.equal(2n);
+  });
+
+  it("refuse si aucun escrow n'est relie au contrat", async function () {
+    const alone = await ethers.deployContract("ServiceAgreement");
+    await alone.connect(client).createAgreement(freelancer.address, "x", termsHash, amount, deadline);
+    await alone.connect(freelancer).acceptAgreement(1);
+    await expect(alone.connect(freelancer).startWork(1)).to.be.revertedWithCustomError(alone, "EscrowNotFunded");
   });
   });
   async function createAcceptAndStart() {
@@ -351,6 +383,7 @@ describe("ServiceAgreement", function () {
     it("getDispute donne le contexte et l'issue par defaut", async function () {
       expect((await contract.getDispute((await create(), 1))).openedAt).to.equal(0n);
       await contract.connect(freelancer).acceptAgreement(1);
+      await fund();
       await contract.connect(freelancer).startWork(1);
       await contract.connect(freelancer).markDelivered(1, DELIVERABLE_HASH, DELIVERABLE_URI);
       await contract.connect(client).raiseDispute(1);
@@ -366,9 +399,71 @@ describe("ServiceAgreement", function () {
   it("parcours complet : creation jusqu'a la validation", async function () {
     await create();
     await contract.connect(freelancer).acceptAgreement(1);
+    await fund();
     await contract.connect(freelancer).startWork(1);
     await contract.connect(freelancer).markDelivered(1, DELIVERABLE_HASH, DELIVERABLE_URI);
     await contract.connect(client).approveDelivery(1);
     expect((await contract.getAgreement(1)).status).to.equal(4n); // Completed
+  });
+
+  describe("setEscrowContract", function () {
+    it("relie l'escrow une seule fois, par le deployeur", async function () {
+      expect(await contract.escrowContract()).to.equal(await escrow.getAddress());
+      await expect(contract.setEscrowContract(stranger.address))
+        .to.be.revertedWithCustomError(contract, "InvalidParameters"); // deja relie
+      const fresh = await ethers.deployContract("ServiceAgreement");
+      await expect(fresh.connect(stranger).setEscrowContract(stranger.address))
+        .to.be.revertedWithCustomError(fresh, "NotDeployer");
+      await expect(fresh.setEscrowContract(ethers.ZeroAddress))
+        .to.be.revertedWithCustomError(fresh, "InvalidParameters");
+    });
+  });
+
+  describe("penalite de retard", function () {
+    async function deliverAt(timestamp) {
+      await createAcceptAndStart();
+      if (timestamp) await time.increaseTo(timestamp);
+      await contract.connect(freelancer).markDelivered(1, DELIVERABLE_HASH, DELIVERABLE_URI);
+    }
+
+    it("aucune penalite si livre a temps ou rien livre", async function () {
+      await createAcceptAndStart();
+      expect(await contract.latePenaltyPercent(1)).to.equal(0n);
+      await contract.connect(freelancer).markDelivered(1, DELIVERABLE_HASH, DELIVERABLE_URI);
+      expect(await contract.latePenaltyPercent(1)).to.equal(0n);
+    });
+
+    it("1 % par jour de retard entame", async function () {
+      await deliverAt(deadline + 1); // 1 seconde de retard : 1er jour entame
+      expect(await contract.latePenaltyPercent(1)).to.equal(1n);
+    });
+
+    it("10 jours de retard : 10 %", async function () {
+      await deliverAt(deadline + 10 * DAY - 1); // transaction minee a +10 jours pile
+      expect(await contract.latePenaltyPercent(1)).to.equal(10n);
+    });
+
+    it("refuse une livraison au 100e jour de retard (100 %)", async function () {
+      await createAcceptAndStart();
+      await time.increaseTo(deadline + 99 * DAY + 1);
+      await expect(contract.connect(freelancer).markDelivered(1, DELIVERABLE_HASH, DELIVERABLE_URI))
+        .to.be.revertedWithCustomError(contract, "DeliveryExpired");
+    });
+
+    it("cancelExpired : apres 100 jours, n'importe qui annule et le client est rembourse", async function () {
+      await createAcceptAndStart();
+      await time.increaseTo(deadline + 99 * DAY - 1); // transaction a +99 jours pile : 99 %
+      await expect(contract.connect(stranger).cancelExpired(1))
+        .to.be.revertedWithCustomError(contract, "NotExpired"); // 99 %
+      await time.increaseTo(deadline + 99 * DAY + 1);
+      await expect(contract.connect(stranger).cancelExpired(1)).to.changeEtherBalance(client, amount);
+      expect((await contract.getAgreement(1)).status).to.equal(5n); // Cancelled
+    });
+
+    it("cancelExpired refuse un accord livre", async function () {
+      await deliverAt(deadline + 5 * DAY);
+      await time.increaseTo(deadline + 200 * DAY);
+      await expect(contract.cancelExpired(1)).to.be.revertedWithCustomError(contract, "InvalidStatus");
+    });
   });
 });

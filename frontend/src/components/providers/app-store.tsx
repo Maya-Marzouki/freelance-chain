@@ -79,7 +79,7 @@ function reducer(state: State, e: Event): State {
         ...state,
         agreements: state.agreements.map((a) =>
           a.id === e.id
-            ? { ...a, status: e.to, timeline: [...a.timeline, e.event], deliverable: e.deliverable ?? a.deliverable }
+            ? { ...a, status: e.to, timeline: [...a.timeline, e.event], deliverable: e.deliverable ?? a.deliverable, deliveredAt: e.deliverable ? e.event.date : a.deliveredAt }
             : a,
         ),
         milestones:

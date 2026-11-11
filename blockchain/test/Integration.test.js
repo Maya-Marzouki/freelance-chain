@@ -20,6 +20,7 @@ describe("ServiceAgreement + EscrowMilestones", function () {
     [client, freelancer, stranger] = await ethers.getSigners();
     agreements = await ethers.deployContract("ServiceAgreement");
     escrow = await ethers.deployContract("EscrowMilestones", [await agreements.getAddress()]);
+    await agreements.setEscrowContract(await escrow.getAddress());
     deadline = (await time.latest()) + 14 * 24 * 3600;
   });
 
@@ -75,8 +76,8 @@ describe("ServiceAgreement + EscrowMilestones", function () {
     await expect(escrow.connect(freelancer).submitMilestone(1, 1, MILESTONE_URI)).to.be.revertedWith("Agreement frozen");
     await expect(escrow.settle(1)).to.be.revertedWith("Agreement not finished");
 
-    await agreements.connect(client).concede(1); // le client reconnait sa faute
-    await expect(escrow.connect(stranger).settle(1)).to.changeEtherBalance(freelancer, amounts[1]);
+    // le client reconnait sa faute : le solde part au freelance dans la meme transaction
+    await expect(agreements.connect(client).concede(1)).to.changeEtherBalance(freelancer, amounts[1]);
     expect((await agreements.getAgreement(1)).status).to.equal(4n); // Completed
     expect((await escrow.getEscrow(1)).status).to.equal(3n); // Completed
   });
@@ -88,8 +89,7 @@ describe("ServiceAgreement + EscrowMilestones", function () {
     await escrow.connect(client).releasePayment(1, 0);
 
     await agreements.connect(freelancer).raiseDispute(1);
-    await agreements.connect(freelancer).concede(1);
-    await expect(escrow.settle(1)).to.changeEtherBalance(client, amounts[1]);
+    await expect(agreements.connect(freelancer).concede(1)).to.changeEtherBalance(client, amounts[1]);
     expect((await agreements.getAgreement(1)).status).to.equal(5n); // Cancelled
     expect((await escrow.getEscrow(1)).status).to.equal(4n); // Cancelled
   });
@@ -101,26 +101,72 @@ describe("ServiceAgreement + EscrowMilestones", function () {
 
     await expect(agreements.connect(stranger).resolveDispute(1)).to.be.revertedWithCustomError(agreements, "DisputeWindowOpen");
     await time.increase(WINDOW);
-    await agreements.connect(stranger).resolveDispute(1);
-    await expect(escrow.connect(stranger).settle(1)).to.changeEtherBalance(freelancer, total);
+    await expect(agreements.connect(stranger).resolveDispute(1)).to.changeEtherBalance(freelancer, total);
   });
 
   it("litige sans cession : rien livre, le client est rembourse automatiquement", async function () {
     await fundAndStart();
     await agreements.connect(freelancer).raiseDispute(1);
     await time.increase(WINDOW);
-    await agreements.connect(stranger).resolveDispute(1);
-    await expect(escrow.connect(stranger).settle(1)).to.changeEtherBalance(client, total);
+    await expect(agreements.connect(stranger).resolveDispute(1)).to.changeEtherBalance(client, total);
   });
 
   it("annulation : le client annule l'accord puis reprend ses fonds", async function () {
     await createAgreementAndEscrow();
     await agreements.connect(freelancer).acceptAgreement(1);
     await escrow.connect(client).deposit(1, { value: total });
-    await agreements.connect(client).cancel(1);
-    await expect(escrow.settle(1)).to.changeEtherBalance(client, total);
+    await expect(agreements.connect(client).cancel(1)).to.changeEtherBalance(client, total);
     expect((await agreements.getAgreement(1)).status).to.equal(5n);
     expect((await escrow.getEscrow(1)).status).to.equal(4n);
+  });
+
+  describe("paiement automatique avec penalite de retard (1 % par jour)", function () {
+    const DAY = 24 * 3600;
+
+    it("livre a temps : la validation paie 100 % au freelance", async function () {
+      await fundAndStart();
+      await agreements.connect(freelancer).markDelivered(1, DELIVERABLE_HASH, DELIVERABLE_URI);
+      await expect(agreements.connect(client).approveDelivery(1)).to.changeEtherBalances([freelancer, client], [total, 0]);
+    });
+
+    it("10 jours de retard : 90 % au freelance, 10 % rendus au client", async function () {
+      await fundAndStart();
+      await time.increaseTo(deadline + 10 * DAY - 1);
+      await agreements.connect(freelancer).markDelivered(1, DELIVERABLE_HASH, DELIVERABLE_URI);
+      expect(await agreements.latePenaltyPercent(1)).to.equal(10n);
+
+      const toFreelancer = (total * 90n) / 100n;
+      const tx = agreements.connect(client).approveDelivery(1);
+      await expect(tx).to.changeEtherBalances([freelancer, client], [toFreelancer, total - toFreelancer]);
+      await expect(tx).to.emit(escrow, "EscrowSettled").withArgs(1, true, toFreelancer, total - toFreelancer);
+      expect((await escrow.getEscrow(1)).releasedAmount).to.equal(toFreelancer);
+      expect(await ethers.provider.getBalance(await escrow.getAddress())).to.equal(0n);
+    });
+
+    it("la penalite porte sur le total : les jalons deja payes comptent", async function () {
+      await fundAndStart();
+      await escrow.connect(freelancer).submitMilestone(1, 0, MILESTONE_URI);
+      await escrow.connect(client).approveMilestone(1, 0);
+      await escrow.connect(client).releasePayment(1, 0); // 1 ETH deja paye
+      await time.increaseTo(deadline + 50 * DAY - 1);
+      await agreements.connect(freelancer).markDelivered(1, DELIVERABLE_HASH, DELIVERABLE_URI);
+
+      // droit total : 50 % de 3 ETH = 1,5 ETH ; 1 ETH deja recu -> 0,5 ETH, le client recupere 1,5 ETH
+      await expect(agreements.connect(client).approveDelivery(1)).to.changeEtherBalances(
+        [freelancer, client],
+        [ethers.parseEther("0.5"), ethers.parseEther("1.5")]
+      );
+    });
+
+    it("100 jours de retard : annule et l'escrow revient au client", async function () {
+      await fundAndStart();
+      await time.increaseTo(deadline + 100 * DAY);
+      await expect(agreements.connect(freelancer).markDelivered(1, DELIVERABLE_HASH, DELIVERABLE_URI))
+        .to.be.revertedWithCustomError(agreements, "DeliveryExpired");
+      await expect(agreements.connect(stranger).cancelExpired(1)).to.changeEtherBalance(client, total);
+      expect((await agreements.getAgreement(1)).status).to.equal(5n); // Cancelled
+      expect((await escrow.getEscrow(1)).status).to.equal(4n); // Cancelled
+    });
   });
 
   it("un tiers ne peut toucher ni a l'accord ni aux fonds", async function () {

@@ -46,6 +46,11 @@ const ERROR_MESSAGES: Record<string, string> = {
   InvalidStatus: "This action is not allowed in the agreement's current status.",
   DeadlineNotPassed: "The deadline has not passed yet.",
   AgreementNotFound: "This agreement does not exist on the connected blockchain.",
+  EscrowNotFunded: "The client has not funded the escrow yet: work can only start once the payment is locked.",
+  DeliveryExpired:
+    "The work is 100 days late: the late penalty reached 100%, so it can no longer be delivered. The agreement can be cancelled and the client refunded.",
+  NotExpired: "The agreement is not 100 days late yet.",
+  NotDeployer: "Only the deployer can link the escrow contract.",
   InvalidParameters:
     "Invalid parameters. The freelancer must be a different account from the one signing in MetaMask, and the deadline must be after the blockchain's current date (it moves ahead with npm run time:skip). When delivering, a link is required.",
 };
@@ -251,6 +256,9 @@ export async function sendAction(
       break;
     case "cancelOverdue":
       tx = await contract.cancelOverdue(onChainId);
+      break;
+    case "cancelExpired":
+      tx = await contract.cancelExpired(onChainId);
       break;
     case "dispute":
       tx = await contract.raiseDispute(onChainId);

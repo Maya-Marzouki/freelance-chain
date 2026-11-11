@@ -23,11 +23,30 @@ Created --accept--> Accepted --start--> InProgress --deliver--> Delivered --appr
 |----------|----------|---------------|------------------|
 | `createAgreement` | client | - | Created |
 | `acceptAgreement` | freelance | Created | Accepted |
-| `startWork` | freelance | Accepted | InProgress |
-| `markDelivered` | freelance | InProgress | Delivered |
-| `approveDelivery` | client | Delivered | Completed |
+| `startWork` | freelance | Accepted, **escrow finance** (`EscrowNotFunded` sinon) | InProgress |
+| `markDelivered` | freelance | InProgress, moins de 100 % de penalite (`DeliveryExpired` sinon) | Delivered |
+| `approveDelivery` | client | Delivered | Completed, et l'escrow paie le freelance (moins la penalite) |
 | `cancel` | client | Created / Accepted | Cancelled |
 | `cancelOverdue` | client | Accepted / InProgress, apres l'echeance | Cancelled |
+| `cancelExpired` | n'importe qui | Accepted / InProgress, 100e jour de retard | Cancelled, l'escrow rembourse le client |
+
+### Escrow obligatoire et paiement automatique
+
+- **Demarrage** : `startWork` exige que le client ait depose le paiement (`EscrowMilestones.isFunded`). Le freelance ne travaille jamais sans garantie d'etre paye.
+- **Fin de l'accord** : chaque fonction qui termine l'accord (`approveDelivery`, `cancel`, `cancelOverdue`, `cancelExpired`, `concede`, `resolveDispute`) appelle `EscrowMilestones.settleAgreement` dans la meme transaction. Il n'y a plus d'etape "settle" separee ; `settle(escrowId)` reste disponible en secours.
+- **Lien A -> B** : B lit A (constructeur), A appelle B. Le deployeur relie A a B une seule fois (`setEscrowContract`, dans `scripts/deploy.js`). L'appel externe a lieu apres la mise a jour du statut (checks-effects-interactions), et B est protege par `ReentrancyGuard`.
+
+### Penalite de retard
+
+| Retard a la livraison | Paiement du freelance a la validation |
+|---|---|
+| Livre avant l'echeance | 100 % |
+| `n` jours entames de retard | `100 - n` % ; les `n` % retenus reviennent au client |
+| 100e jour de retard | livraison refusee (`DeliveryExpired`) ; `cancelExpired` annule et rembourse le client |
+
+- `latePenaltyPercent(id)` : 1 % (`LATE_PENALTY_PER_DAY`) par jour entame entre l'echeance et `deliveredAt`, plafonne a 100 % (`MAX_PENALTY`). La date de livraison fige la penalite : un client qui tarde a valider ne la fait pas augmenter.
+- La penalite porte sur le montant total. Les jalons deja liberes comptent dans le droit du freelance : s'il a deja touche plus que son droit, il ne recoit rien de plus, mais rien ne lui est repris.
+- Litige apres une livraison en retard : la regle automatique reste "le freelance gagne seulement s'il a livre a temps". Si le client cede, le freelance est paye moins la penalite.
 | `raiseDispute` | client ou freelance | InProgress / Delivered | Disputed |
 | `concede` | client ou freelance | Disputed | Completed (le client cede) ou Cancelled (le freelance cede) |
 | `resolveDispute` | n'importe qui, apres 3 jours | Disputed | Completed ou Cancelled selon la regle automatique |
@@ -71,10 +90,11 @@ B lit A (`IServiceAgreement`) : il n'a pas d'arbitre et ne reprend ni les partie
 | Somme des jalons = montant de l'accord | coherence des deux contrats |
 | Un seul escrow par accord | `escrowOfAgreement` |
 | Depot possible seulement une fois l'accord accepte | l'argent n'est bloque que si le freelance s'est engage |
+| Le travail ne demarre qu'apres le depot (`isFunded`, verifie par `startWork` de A) | le freelance est sur d'etre paye |
 | Jalons geles si l'accord est `Disputed` ou `Cancelled` | un litige gele les fonds |
-| `settle(escrowId)`, par n'importe qui, quand l'accord est `Completed` ou `Cancelled` | Completed paie le freelance du reste, Cancelled rembourse le client |
+| `settleAgreement(agreementId)`, appele par A a la fin de l'accord (`settle(escrowId)` en secours) | Completed paie le freelance du reste moins la penalite de retard, Cancelled rembourse le client |
 
-Pour se faire rembourser avant le debut du travail : le client annule l'accord (`cancel`), puis n'importe qui appelle `settle`.
+Pour se faire rembourser avant le debut du travail : le client annule l'accord (`cancel`), et l'escrow le rembourse dans la meme transaction.
 
 Liberation d'un jalon : le contrat exige deux etapes (`approveMilestone` puis `releasePayment`). Le front les enchaine en un clic (deux confirmations MetaMask) ; si la seconde est refusee, le jalon reste `Approved` et peut etre libere plus tard.
 
@@ -116,8 +136,8 @@ Token ERC-20 de reputation, **non transferable** (soulbound). Le paiement reste 
 | Element | Regle |
 |---|---|
 | Frappe | `claimReward(agreementId)`, appelable par n'importe qui |
-| Conditions | accord `Completed` (A) **et** escrow `Completed` (B), donc freelance paye en totalite ; une seule fois par accord |
-| Montants | freelance : 100 FLR par ETH paye ; client : 20 FLR par ETH paye (`FREELANCER_RATE`, `CLIENT_RATE`) |
+| Conditions | accord `Completed` (A) **et** escrow `Completed` (B), donc freelance paye ; une seule fois par accord |
+| Montants | freelance : 100 FLR par ETH paye ; client : 20 FLR par ETH paye (`FREELANCER_RATE`, `CLIENT_RATE`). Le montant paye tient compte de la penalite de retard |
 | Condition de deadline | `isDeliveredOnTime(id)` : livre (`deliveredAt` de A) au plus tard a l'echeance. Sinon (en retard, ou accord termine sans livraison), le freelance ne recoit que `LATE_REWARD_PERCENT` = 50 %. Le client, qui a paye en totalite, garde sa part complete. L'evenement `ReputationRewarded` indique `onTime` |
 | Compteur | `missionsCompleted(adresse)` : nombre de missions recompensees |
 | Transferts | `transfer`, `transferFrom` et `approve` revertent (`TransferDisabled`) : la reputation ne s'achete pas |

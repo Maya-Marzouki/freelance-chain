@@ -32,6 +32,12 @@ async function main() {
       JSON.stringify({ address, abi: artifact.abi }, null, 2)
     );
   }
+  // A et B se connaissent : B lit A (constructeur), A appelle B (startWork exige un escrow
+  // finance, la fin de l'accord solde l'escrow). Le lien A -> B est pose une seule fois.
+  const agreement = await hre.ethers.getContractAt("ServiceAgreement", deployed.ServiceAgreement);
+  await (await agreement.setEscrowContract(deployed.EscrowMilestones)).wait();
+  console.log("ServiceAgreement relie a EscrowMilestones");
+
   console.log(`Adresses et ABI ecrites dans ${outDir}`);
 }
 

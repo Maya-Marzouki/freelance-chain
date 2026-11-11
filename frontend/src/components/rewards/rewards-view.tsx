@@ -86,7 +86,7 @@ export function RewardsView() {
     <>
       <PageHeader
         title="Rewards"
-        description="Soulbound FLR reputation, earned by finishing missions that were paid in full."
+        description="Soulbound FLR reputation, earned by finishing missions paid through the escrow."
       />
 
       {rewardsError && (
@@ -151,7 +151,7 @@ export function RewardsView() {
           </div>
 
           <Card className="mt-6">
-            <CardHeader title="Ready to claim" description="Completed agreements whose escrow paid the freelancer in full" />
+            <CardHeader title="Ready to claim" description="Completed agreements whose escrow paid the freelancer" />
             {claimable.length === 0 ? (
               <p className="px-5 py-5 text-sm text-slate-500 sm:px-6">Nothing to claim right now.</p>
             ) : (

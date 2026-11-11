@@ -18,6 +18,7 @@ describe("ReputationToken", function () {
     [client, freelancer, stranger] = await ethers.getSigners();
     agreements = await ethers.deployContract("ServiceAgreement");
     escrow = await ethers.deployContract("EscrowMilestones", [await agreements.getAddress()]);
+    await agreements.setEscrowContract(await escrow.getAddress());
     token = await ethers.deployContract("ReputationToken", [
       await agreements.getAddress(),
       await escrow.getAddress(),
@@ -40,11 +41,10 @@ describe("ReputationToken", function () {
     await agreements.connect(client).approveDelivery(1);
   }
 
-  /** Accord termine, escrow solde au freelance via `settle`. */
+  /** Accord termine : la validation solde l'escrow au freelance dans la meme transaction. */
   async function completeMission() {
     await createFundAndStart();
     await deliverAndApprove();
-    await escrow.settle(1);
   }
 
   it("a le nom, le symbole et 18 decimales", async function () {
@@ -103,25 +103,24 @@ describe("ReputationToken", function () {
       expect(await token.balanceOf(freelancer.address)).to.equal(ethers.parseEther("300"));
     });
 
-    it("livre en retard : le freelance recoit 50 %, le client sa part complete", async function () {
+    it("livre en retard : le freelance recoit 50 % (sur ce qu'il a touche), le client sa part complete", async function () {
       await createFundAndStart();
-      await time.increaseTo(deadline + 1);
+      await time.increaseTo(deadline + 1); // 1er jour de retard : 1 % retenu sur le paiement
       await deliverAndApprove();
-      await escrow.settle(1);
 
+      // paye : 2,97 ETH -> freelance 2,97 x 100 x 50 % = 148,5 FLR ; client 2,97 x 20 = 59,4 FLR
       expect(await token.isDeliveredOnTime(1)).to.equal(false);
       await expect(token.claimReward(1))
         .to.emit(token, "ReputationRewarded")
-        .withArgs(1, freelancer.address, client.address, ethers.parseEther("150"), ethers.parseEther("60"), false);
-      expect(await token.balanceOf(freelancer.address)).to.equal(ethers.parseEther("150"));
-      expect(await token.balanceOf(client.address)).to.equal(ethers.parseEther("60"));
+        .withArgs(1, freelancer.address, client.address, ethers.parseEther("148.5"), ethers.parseEther("59.4"), false);
+      expect(await token.balanceOf(freelancer.address)).to.equal(ethers.parseEther("148.5"));
+      expect(await token.balanceOf(client.address)).to.equal(ethers.parseEther("59.4"));
     });
 
     it("jamais livre (le client cede pendant le travail) : compte comme en retard", async function () {
       await createFundAndStart();
       await agreements.connect(client).raiseDispute(1);
       await agreements.connect(client).concede(1); // Completed sans markDelivered
-      await escrow.settle(1);
 
       expect(await token.isDeliveredOnTime(1)).to.equal(false);
       await token.claimReward(1);
@@ -146,18 +145,12 @@ describe("ReputationToken", function () {
     await expect(token.claimReward(1)).to.be.revertedWithCustomError(token, "AgreementNotCompleted");
   });
 
-  it("refuse un accord Completed sans escrow", async function () {
-    await agreements.connect(client).createAgreement(freelancer.address, "Site", termsHash, total, deadline);
-    await agreements.connect(freelancer).acceptAgreement(1);
-    await agreements.connect(freelancer).startWork(1);
-    await deliverAndApprove();
-    await expect(token.claimReward(1)).to.be.revertedWithCustomError(token, "EscrowNotCompleted");
-  });
-
-  it("refuse tant que l'escrow n'est pas solde", async function () {
+  it("la validation solde l'escrow : la recompense est disponible aussitot", async function () {
     await createFundAndStart();
-    await deliverAndApprove(); // accord Completed mais `settle` pas encore appele
-    await expect(token.claimReward(1)).to.be.revertedWithCustomError(token, "EscrowNotCompleted");
+    await deliverAndApprove(); // aucun appel a `settle`
+    expect((await escrow.getEscrow(1)).status).to.equal(3n); // Completed
+    await token.claimReward(1);
+    expect(await token.balanceOf(freelancer.address)).to.equal(ethers.parseEther("300"));
   });
 
   it("refuse un accord inexistant", async function () {
