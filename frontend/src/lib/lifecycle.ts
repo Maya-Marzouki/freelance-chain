@@ -25,9 +25,10 @@ export interface ActionDefinition {
   event: ActivityType;
   /**
    * Extra condition enforced by the contract besides role and status:
-   * `deadlinePassed` (cancelOverdue) or `disputeWindowElapsed` (automatic ruling).
+   * `deadlinePassed` (cancelOverdue), `disputeWindowElapsed` (automatic ruling),
+   * `escrowFunded` (startWork) or `expired` (100 days late, cancelExpired).
    */
-  requires?: "deadlinePassed" | "disputeWindowElapsed";
+  requires?: "deadlinePassed" | "disputeWindowElapsed" | "escrowFunded" | "expired";
   tone: "primary" | "danger" | "neutral";
   confirmTitle: string;
   confirmBody: string;
@@ -52,11 +53,12 @@ export const ACTIONS: Record<AgreementAction, ActionDefinition> = {
     description: "Signal that work has begun.",
     allowedRoles: ["freelancer"],
     from: ["Accepted"],
+    requires: "escrowFunded",
     to: "InProgress",
     event: "WorkStarted",
     tone: "primary",
     confirmTitle: "Start working on this agreement?",
-    confirmBody: "The agreement will move to In Progress and the client will be notified.",
+    confirmBody: "The client has locked the payment in escrow. The agreement will move to In Progress.",
   },
   deliver: {
     action: "deliver",
@@ -80,7 +82,8 @@ export const ACTIONS: Record<AgreementAction, ActionDefinition> = {
     event: "AgreementCompleted",
     tone: "primary",
     confirmTitle: "Approve delivery and release payment?",
-    confirmBody: "Remaining escrow funds will be released to the freelancer. This action cannot be undone.",
+    confirmBody:
+      "The escrow pays the freelancer in the same transaction. A late delivery loses 1% of the amount per day of delay, which goes back to you. This action cannot be undone.",
   },
   dispute: {
     action: "dispute",
@@ -105,7 +108,7 @@ export const ACTIONS: Record<AgreementAction, ActionDefinition> = {
     event: "AgreementCancelled",
     tone: "danger",
     confirmTitle: "Cancel this agreement?",
-    confirmBody: "The agreement will be permanently cancelled and any locked funds returned to the client.",
+    confirmBody: "The agreement will be permanently cancelled and any locked funds returned to the client in the same transaction.",
   },
   cancelOverdue: {
     action: "cancelOverdue",
@@ -118,7 +121,21 @@ export const ACTIONS: Record<AgreementAction, ActionDefinition> = {
     event: "AgreementCancelled",
     tone: "danger",
     confirmTitle: "Cancel this overdue agreement?",
-    confirmBody: "The deadline has passed and nothing was delivered. The agreement will be cancelled.",
+    confirmBody: "The deadline has passed and nothing was delivered. The agreement will be cancelled and the escrow refunded to you.",
+  },
+  cancelExpired: {
+    action: "cancelExpired",
+    label: "Cancel (100 days late)",
+    description: "The penalty reached 100%: cancel and refund the client.",
+    allowedRoles: ["client", "freelancer", "observer"],
+    from: ["Accepted", "InProgress"],
+    requires: "expired",
+    to: "Cancelled",
+    event: "AgreementCancelled",
+    tone: "danger",
+    confirmTitle: "Cancel this expired agreement?",
+    confirmBody:
+      "The work is 100 days late: the late penalty reached 100%, so it can no longer be delivered. The agreement is cancelled and the escrow goes back to the client. Anyone can trigger it.",
   },
   concedeAsClient: {
     action: "concedeAsClient",
@@ -170,6 +187,7 @@ export const ACTION_ORDER: AgreementAction[] = [
   "dispute",
   "cancel",
   "cancelOverdue",
+  "cancelExpired",
   "concedeAsClient",
   "concedeAsFreelancer",
   "resolveDispute",
@@ -191,6 +209,10 @@ export interface ActionContext {
   deadlinePassed?: boolean;
   /** The dispute window is over: anyone can apply the automatic ruling. */
   disputeWindowElapsed?: boolean;
+  /** The client has deposited the payment in escrow: the freelancer can start. */
+  escrowFunded?: boolean;
+  /** 100 days late without delivery: the penalty reached 100%. */
+  expired?: boolean;
 }
 
 export function canPerform(
@@ -202,6 +224,8 @@ export function canPerform(
   const def = ACTIONS[action];
   if (def.requires === "deadlinePassed" && !context.deadlinePassed) return false;
   if (def.requires === "disputeWindowElapsed" && !context.disputeWindowElapsed) return false;
+  if (def.requires === "escrowFunded" && !context.escrowFunded) return false;
+  if (def.requires === "expired" && !context.expired) return false;
   return def.allowedRoles.includes(role) && def.from.includes(status);
 }
 

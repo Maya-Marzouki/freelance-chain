@@ -1,6 +1,11 @@
 {
-  "address": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+  "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
   "abi": [
+    {
+      "inputs": [],
+      "stateMutability": "nonpayable",
+      "type": "constructor"
+    },
     {
       "inputs": [],
       "name": "AgreementNotFound",
@@ -12,6 +17,11 @@
       "type": "error"
     },
     {
+      "inputs": [],
+      "name": "DeliveryExpired",
+      "type": "error"
+    },
+    {
       "inputs": [
         {
           "internalType": "uint256",
@@ -20,6 +30,11 @@
         }
       ],
       "name": "DisputeWindowOpen",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "EscrowNotFunded",
       "type": "error"
     },
     {
@@ -41,6 +56,16 @@
     {
       "inputs": [],
       "name": "NotClient",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "NotDeployer",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "NotExpired",
       "type": "error"
     },
     {
@@ -132,6 +157,19 @@
       "anonymous": false,
       "inputs": [
         {
+          "indexed": false,
+          "internalType": "address",
+          "name": "escrow",
+          "type": "address"
+        }
+      ],
+      "name": "EscrowLinked",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
           "indexed": true,
           "internalType": "uint256",
           "name": "id",
@@ -156,6 +194,32 @@
     {
       "inputs": [],
       "name": "DISPUTE_WINDOW",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "LATE_PENALTY_PER_DAY",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "MAX_PENALTY",
       "outputs": [
         {
           "internalType": "uint256",
@@ -214,6 +278,19 @@
         }
       ],
       "name": "cancel",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "id",
+          "type": "uint256"
+        }
+      ],
+      "name": "cancelExpired",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"
@@ -327,6 +404,32 @@
       "type": "function"
     },
     {
+      "inputs": [],
+      "name": "deployer",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "escrowContract",
+      "outputs": [
+        {
+          "internalType": "contract IEscrowLink",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
       "inputs": [
         {
           "internalType": "uint256",
@@ -432,6 +535,25 @@
           "internalType": "uint256",
           "name": "id",
           "type": "uint256"
+        }
+      ],
+      "name": "latePenaltyPercent",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "id",
+          "type": "uint256"
         },
         {
           "internalType": "bytes32",
@@ -471,6 +593,19 @@
         }
       ],
       "name": "resolveDispute",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "escrow",
+          "type": "address"
+        }
+      ],
+      "name": "setEscrowContract",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"

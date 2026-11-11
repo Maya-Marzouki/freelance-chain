@@ -66,6 +66,7 @@ describe("EscrowMilestones", function () {
     escrow = await ethers.deployContract("EscrowMilestones", [
       await agreements.getAddress(),
     ]);
+    await agreements.setEscrowContract(await escrow.getAddress());
 
     const latestBlock = await ethers.provider.getBlock("latest");
     const futureDeadline = latestBlock.timestamp + 7 * 24 * 60 * 60;
@@ -315,29 +316,35 @@ describe("EscrowMilestones", function () {
   });
 
   describe("Settlement", function () {
-    it("Should pay the freelancer the remaining funds once the agreement is completed", async function () {
+    it("Should require a funded escrow before the work starts", async function () {
+      await createAcceptedEscrow(); // escrow cree mais pas encore finance
+      expect(await escrow.isFunded(1)).to.equal(false);
+      await expect(agreements.connect(freelancer).startWork(1))
+        .to.be.revertedWithCustomError(agreements, "EscrowNotFunded");
+
+      await escrow.connect(client).deposit(1, { value: totalAmount });
+      expect(await escrow.isFunded(1)).to.equal(true);
+      await agreements.connect(freelancer).startWork(1);
+    });
+
+    it("Should pay the freelancer automatically when the client approves the delivery", async function () {
       await createFundedEscrow();
       await agreements.connect(freelancer).startWork(1);
       await agreements.connect(freelancer).markDelivered(1, DELIVERABLE_HASH, DELIVERABLE_URI);
-      await agreements.connect(client).approveDelivery(1);
 
-      await expect(
-        escrow.connect(other).settle(1)
-      ).to.changeEtherBalance(freelancer, totalAmount);
+      const tx = agreements.connect(client).approveDelivery(1);
+      await expect(tx).to.changeEtherBalance(freelancer, totalAmount);
+      await expect(tx).to.emit(escrow, "EscrowSettled").withArgs(1, true, totalAmount, 0);
 
       const result = await escrow.getEscrow(1);
       expect(result.status).to.equal(3); // Completed
       expect(result.releasedAmount).to.equal(totalAmount);
     });
 
-    it("Should refund the client the remaining funds once the agreement is cancelled", async function () {
+    it("Should refund the client automatically when the agreement is cancelled", async function () {
       await createFundedEscrow();
-      await agreements.connect(client).cancel(1);
 
-      await expect(
-        escrow.connect(other).settle(1)
-      ).to.changeEtherBalance(client, totalAmount);
-
+      await expect(agreements.connect(client).cancel(1)).to.changeEtherBalance(client, totalAmount);
       expect((await escrow.getEscrow(1)).status).to.equal(4); // Cancelled
     });
 
@@ -348,18 +355,14 @@ describe("EscrowMilestones", function () {
       await escrow.connect(client).approveMilestone(1, 0);
       await escrow.connect(client).releasePayment(1, 0);
       await agreements.connect(client).raiseDispute(1);
-      await agreements.connect(freelancer).concede(1);
 
-      await expect(
-        escrow.settle(1)
-      ).to.changeEtherBalance(client, amounts[1]);
+      await expect(agreements.connect(freelancer).concede(1)).to.changeEtherBalance(client, amounts[1]);
     });
 
     it("Should close an escrow that was never funded", async function () {
       await createAcceptedEscrow();
-      await agreements.connect(client).cancel(1);
 
-      await expect(escrow.settle(1)).to.changeEtherBalances([client, freelancer], [0, 0]);
+      await expect(agreements.connect(client).cancel(1)).to.changeEtherBalances([client, freelancer], [0, 0]);
       expect((await escrow.getEscrow(1)).status).to.equal(4); // Cancelled
     });
 
@@ -372,15 +375,17 @@ describe("EscrowMilestones", function () {
       await agreements.connect(client).raiseDispute(1);
 
       await expect(escrow.settle(1)).to.be.revertedWith("Agreement not finished");
+      await expect(escrow.settleAgreement(1)).to.be.revertedWith("Agreement not finished");
     });
 
     it("Should reject a second settlement and unknown escrows", async function () {
       await createFundedEscrow();
-      await agreements.connect(client).cancel(1);
-      await escrow.settle(1);
+      await agreements.connect(client).cancel(1); // solde automatiquement
 
       await expect(escrow.settle(1)).to.be.revertedWith("Already settled");
       await expect(escrow.settle(9)).to.be.revertedWith("Escrow does not exist");
+      await escrow.settleAgreement(1); // deja solde : ne fait rien
+      await escrow.settleAgreement(9); // aucun escrow : ne fait rien
     });
   });
 

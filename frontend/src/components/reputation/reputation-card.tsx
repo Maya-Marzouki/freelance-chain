@@ -99,7 +99,7 @@ export function ReputationCard({ agreement, role }: Props) {
   } else {
     status = (
       <p className="text-sm text-slate-500">
-        Reputation is minted once the agreement is completed and the escrow has paid the freelancer in full.
+        Reputation is minted once the agreement is completed and the escrow has paid the freelancer.
       </p>
     );
   }

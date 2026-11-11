@@ -5,6 +5,11 @@ pragma solidity ^0.8.28;
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./IServiceAgreement.sol";
 
+/// @dev Penalite de retard calculee par A a partir de la date de livraison.
+interface ILatePenalty {
+    function latePenaltyPercent(uint256 id) external view returns (uint256);
+}
+
 /// @title EscrowMilestones
 /// @notice Contrat B : fonds bloques par jalons pour un accord du contrat A.
 /// @dev Aucun arbitre : l'accord (A) est la source de verite. Les jalons sont geles
@@ -98,10 +103,13 @@ contract EscrowMilestones is ReentrancyGuard {
     );
 
     /// @param freelancerPaid true si l'accord est Completed, false s'il est Cancelled.
+    /// @param toFreelancer Montant verse au freelance (reste moins la penalite de retard).
+    /// @param toClient Montant rendu au client (remboursement, ou penalite de retard).
     event EscrowSettled(
         uint256 indexed escrowId,
         bool freelancerPaid,
-        uint256 amount
+        uint256 toFreelancer,
+        uint256 toClient
     );
 
     modifier onlyClient(uint256 escrowId) {
@@ -367,12 +375,33 @@ contract EscrowMilestones is ReentrancyGuard {
     }
 
     /// @notice Solde l'escrow selon l'issue de l'accord : Completed paie le freelance
-    ///         du reste, Cancelled rembourse le client. Appelable par n'importe qui.
+    ///         du reste (moins la penalite de retard), Cancelled rembourse le client.
+    ///         Appelable par n'importe qui ; A l'appelle aussi automatiquement.
     function settle(uint256 escrowId)
         external
         nonReentrant
         escrowExists(escrowId)
     {
+        _settle(escrowId);
+    }
+
+    /// @notice Solde l'escrow d'un accord s'il existe et n'est pas deja solde (sinon ne fait rien).
+    /// @dev Appele par A a la fin de l'accord : la validation paie le freelance dans la meme transaction.
+    function settleAgreement(uint256 agreementId) external nonReentrant {
+        uint256 escrowId = escrowOfAgreement[agreementId];
+        if (escrowId == 0) return;
+        EscrowStatus status = escrows[escrowId].status;
+        if (status == EscrowStatus.Completed || status == EscrowStatus.Cancelled) return;
+        _settle(escrowId);
+    }
+
+    /// @notice true si le client a depose le paiement de l'accord : condition de `startWork` dans A.
+    function isFunded(uint256 agreementId) external view returns (bool) {
+        uint256 escrowId = escrowOfAgreement[agreementId];
+        return escrowId != 0 && escrows[escrowId].depositedAmount > 0;
+    }
+
+    function _settle(uint256 escrowId) private {
         Escrow storage escrow = escrows[escrowId];
 
         require(
@@ -396,23 +425,26 @@ contract EscrowMilestones is ReentrancyGuard {
         uint256 remaining =
             escrow.depositedAmount - escrow.releasedAmount;
 
+        // Completed : le freelance a droit au montant moins la penalite de retard. Ce qui a
+        // deja ete libere par jalons compte dans ce droit ; le reste revient au client.
+        uint256 toFreelancer;
+        if (freelancerPaid) {
+            uint256 penalty = ILatePenalty(address(agreements)).latePenaltyPercent(escrow.agreementId);
+            uint256 due = (escrow.depositedAmount * (100 - penalty)) / 100;
+            toFreelancer = due > escrow.releasedAmount ? due - escrow.releasedAmount : 0;
+            if (toFreelancer > remaining) toFreelancer = remaining;
+        }
+        uint256 toClient = remaining - toFreelancer;
+
         escrow.status = freelancerPaid
             ? EscrowStatus.Completed
             : EscrowStatus.Cancelled;
+        escrow.releasedAmount += toFreelancer;
 
-        if (freelancerPaid) {
-            escrow.releasedAmount += remaining;
-        }
+        if (toFreelancer > 0) escrow.freelancer.transfer(toFreelancer);
+        if (toClient > 0) escrow.client.transfer(toClient);
 
-        if (remaining > 0) {
-            if (freelancerPaid) {
-                escrow.freelancer.transfer(remaining);
-            } else {
-                escrow.client.transfer(remaining);
-            }
-        }
-
-        emit EscrowSettled(escrowId, freelancerPaid, remaining);
+        emit EscrowSettled(escrowId, freelancerPaid, toFreelancer, toClient);
     }
 
     function getMilestone(uint256 escrowId, uint256 milestoneId)

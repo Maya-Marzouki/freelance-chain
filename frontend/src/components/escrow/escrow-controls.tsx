@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/modal";
 import { useAppStore } from "@/components/providers/app-store";
 import { useToast } from "@/components/providers/toast-provider";
+import { latePenaltyPercent, settlementSplit } from "@/lib/late-penalty";
 import { cn, formatEth } from "@/lib/utils";
 import type { Agreement, EscrowStatus, Role } from "@/types/agreement";
 import { CreateEscrowDialog } from "./create-escrow-dialog";
@@ -88,7 +89,11 @@ export function EscrowControls({ agreement, role }: Props) {
     const open = escrow.status === "Created" || escrow.status === "Funded" || escrow.status === "InProgress";
     // B follows the final status of A: Completed pays the freelancer, Cancelled refunds the client.
     const finished = agreement.status === "Completed" || agreement.status === "Cancelled";
-    const remaining = escrow.depositedEth - escrow.releasedEth;
+    // Fallback only: A settles the escrow itself when the agreement ends. Completed pays minus the late penalty.
+    const remaining =
+      agreement.status === "Completed"
+        ? settlementSplit(escrow.depositedEth, escrow.releasedEth, latePenaltyPercent(agreement)).toFreelancer
+        : escrow.depositedEth - escrow.releasedEth;
     body = (
       <>
         <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -102,7 +107,7 @@ export function EscrowControls({ agreement, role }: Props) {
         {escrow.status === "Created" && !finished &&
           (role === "client" ? (
             <>
-              {note(accepted ? "Deposit the full amount to start. It stays locked until you approve each milestone." : "Wait for the freelancer to accept the agreement before funding.")}
+              {note(accepted ? "Deposit the full amount: the freelancer can only start work once it is locked. It stays locked until you approve each milestone or the delivery." : "Wait for the freelancer to accept the agreement before funding.")}
               <Button
                 size="sm"
                 disabled={!accepted}
@@ -120,15 +125,15 @@ export function EscrowControls({ agreement, role }: Props) {
               </Button>
             </>
           ) : (
-            note("Waiting for the client to fund the escrow.")
+            note("Waiting for the client to fund the escrow. You can start work once the payment is locked.")
           ))}
 
         {(escrow.status === "Funded" || escrow.status === "InProgress") && !finished && (
           <>
             {agreement.status === "Disputed"
               ? note("Milestones are frozen while the agreement is disputed. The funds follow the outcome of the dispute.")
-              : note("Funds are released milestone by milestone. If the agreement is cancelled or completed, settle the escrow to move what is left.")}
-            {role === "client" && agreement.status === "Accepted" && note("To get a refund before work starts, cancel the agreement then settle the escrow.")}
+              : note("Funds are released milestone by milestone. When the agreement is completed or cancelled, the escrow is settled in the same transaction: the freelancer is paid (minus 1% per day of late delivery) or the client is refunded.")}
+            {role === "client" && agreement.status === "Accepted" && note("To get a refund before work starts, cancel the agreement: the escrow is refunded automatically.")}
           </>
         )}
 
@@ -168,7 +173,12 @@ export function EscrowControls({ agreement, role }: Props) {
           </>
         )}
 
-        {escrow.status === "Completed" && note("All funds were released to the freelancer.")}
+        {escrow.status === "Completed" &&
+          note(
+            escrow.releasedEth < escrow.depositedEth
+              ? `Settled: ${formatEth(escrow.releasedEth, 6)} paid to the freelancer, ${formatEth(escrow.depositedEth - escrow.releasedEth, 6)} returned to the client (late delivery penalty).`
+              : "All funds were released to the freelancer.",
+          )}
         {escrow.status === "Cancelled" && note("The escrow is closed. Remaining funds went back to the client.")}
       </>
     );

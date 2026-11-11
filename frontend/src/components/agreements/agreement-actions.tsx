@@ -5,6 +5,7 @@ import {
   AlertOctagon,
   Ban,
   BadgeCheck,
+  CalendarX,
   Clock,
   Flag,
   Gavel,
@@ -17,6 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
 import { hashLink, isValidLink } from "@/lib/deliverable";
+import { MAX_PENALTY, latePenaltyPercent, penaltyAt, settlementSplit } from "@/lib/late-penalty";
 import { Card, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/modal";
 import { Segmented } from "@/components/ui/misc";
@@ -42,6 +44,7 @@ const ICONS: Record<AgreementAction, LucideIcon> = {
   dispute: AlertOctagon,
   cancel: Ban,
   cancelOverdue: Clock,
+  cancelExpired: CalendarX,
   concedeAsClient: Flag,
   concedeAsFreelancer: Flag,
   resolveDispute: Gavel,
@@ -62,7 +65,7 @@ interface Props {
 }
 
 export function AgreementActions({ agreement, actualRole, role, onRoleChange }: Props) {
-  const { performAction, mode, nowMs } = useAppStore();
+  const { performAction, mode, nowMs, escrows } = useAppStore();
   const wallet = useWallet();
   const toast = useToast();
   const [pending, setPending] = useState<ActionDefinition | null>(null);
@@ -78,9 +81,19 @@ export function AgreementActions({ agreement, actualRole, role, onRoleChange }: 
   // Demo disputes carry no window: the automatic ruling is available right away.
   const windowElapsed = dispute ? nowMs >= new Date(dispute.windowEndsAt).getTime() : true;
 
+  const escrow = escrows.find((e) => e.agreementId === agreement.id);
+  // On-chain, startWork requires the payment to be locked. Demo escrows are not simulated.
+  const escrowFunded = live ? (escrow?.depositedEth ?? 0) > 0 : true;
+  // Penalty a delivery made now would get, and the one recorded at delivery.
+  const penaltyNow = penaltyAt(agreement.deadline, nowMs);
+  const recordedPenalty = latePenaltyPercent(agreement);
+  const split = settlementSplit(escrow?.depositedEth ?? agreement.amountEth, escrow?.releasedEth ?? 0, recordedPenalty);
+
   const actions = availableActions(viewRole, agreement.status, {
     deadlinePassed: nowMs > new Date(agreement.deadline).getTime(),
     disputeWindowElapsed: windowElapsed,
+    escrowFunded,
+    expired: penaltyNow >= MAX_PENALTY,
   });
   const actor = viewRole === "freelancer" ? agreement.freelancer.address : agreement.client.address;
 
@@ -113,7 +126,14 @@ export function AgreementActions({ agreement, actualRole, role, onRoleChange }: 
 
   const primary = actions.filter((a) => a.tone !== "danger");
   const danger = actions.filter((a) => a.tone === "danger");
-  const waiting = waitingMessage(viewRole, agreement.status);
+  const waiting =
+    agreement.status === "Accepted" && !escrowFunded
+      ? viewRole === "freelancer"
+        ? "Waiting for the client to fund the escrow: you can start work once the payment is locked."
+        : viewRole === "client"
+          ? "Fund the escrow (in the Escrow card) so the freelancer can start work."
+          : waitingMessage(viewRole, agreement.status)
+      : waitingMessage(viewRole, agreement.status);
 
   return (
     <Card>
@@ -243,6 +263,32 @@ export function AgreementActions({ agreement, actualRole, role, onRoleChange }: 
           })()
         }
       >
+        {pending?.action === "deliver" && penaltyNow > 0 && (
+          <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+            The deadline has passed: delivering now records a late penalty of {penaltyNow}% (1% per day of delay). It
+            is deducted from your payment and returned to the client.
+          </p>
+        )}
+        {pending?.action === "approve" && (
+          <dl className="mb-4 space-y-2 rounded-xl border border-slate-100 bg-white p-4 text-sm">
+            <div className="flex justify-between gap-3">
+              <dt className="text-slate-500">Late penalty</dt>
+              <dd className={recordedPenalty > 0 ? "font-medium text-amber-700" : "font-medium text-emerald-700"}>
+                {recordedPenalty > 0 ? `${recordedPenalty}% (${recordedPenalty} day${recordedPenalty === 1 ? "" : "s"} late)` : "None, delivered on time"}
+              </dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-slate-500">Paid to the freelancer now</dt>
+              <dd className="font-medium text-navy-900">{formatEth(split.toFreelancer, 6)}</dd>
+            </div>
+            {split.toClient > 0 && (
+              <div className="flex justify-between gap-3">
+                <dt className="text-slate-500">Returned to you</dt>
+                <dd className="font-medium text-navy-900">{formatEth(split.toClient, 6)}</dd>
+              </div>
+            )}
+          </dl>
+        )}
         {pending?.action === "deliver" && (
           <div className="mb-4 space-y-4">
             <Field

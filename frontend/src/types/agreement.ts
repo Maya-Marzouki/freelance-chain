@@ -160,6 +160,7 @@ export type AgreementAction =
   | "dispute"
   | "cancel"
   | "cancelOverdue"
+  | "cancelExpired"
   | "concedeAsClient"
   | "concedeAsFreelancer"
   | "resolveDispute";
