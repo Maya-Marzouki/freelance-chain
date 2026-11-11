@@ -169,6 +169,26 @@ describe("ServiceAgreement + EscrowMilestones", function () {
     });
   });
 
+  it("un sprint soumis n'est jamais paye sans l'approbation du client", async function () {
+    await fundAndStart();
+    await escrow.connect(freelancer).submitMilestone(1, 0, MILESTONE_URI);
+    expect(await escrow.pendingReviews(1)).to.equal(1n);
+    await expect(agreements.connect(freelancer).markDelivered(1, DELIVERABLE_HASH, DELIVERABLE_URI))
+      .to.changeEtherBalance(freelancer, 0); // soumettre ou livrer ne paie rien
+
+    // le client ne peut pas tout valider (et tout payer) sans avoir verifie le sprint soumis
+    await expect(agreements.connect(client).approveDelivery(1))
+      .to.be.revertedWithCustomError(agreements, "MilestonesAwaitingReview").withArgs(1);
+    expect((await escrow.getEscrow(1)).releasedAmount).to.equal(0n);
+
+    await escrow.connect(client).approveMilestone(1, 0);
+    expect(await escrow.pendingReviews(1)).to.equal(0n);
+    await expect(agreements.connect(client).approveDelivery(1)).to.changeEtherBalance(freelancer, total);
+    // les jalons regles par la validation finale apparaissent payes
+    expect((await escrow.getMilestone(1, 0)).status).to.equal(3n); // Released
+    expect((await escrow.getMilestone(1, 1)).status).to.equal(3n);
+  });
+
   it("un tiers ne peut toucher ni a l'accord ni aux fonds", async function () {
     await fundAndStart();
     await expect(agreements.connect(stranger).cancel(1)).to.be.revertedWithCustomError(agreements, "NotClient");

@@ -26,9 +26,10 @@ export interface ActionDefinition {
   /**
    * Extra condition enforced by the contract besides role and status:
    * `deadlinePassed` (cancelOverdue), `disputeWindowElapsed` (automatic ruling),
-   * `escrowFunded` (startWork) or `expired` (100 days late, cancelExpired).
+   * `escrowFunded` (startWork), `expired` (100 days late, cancelExpired) or
+   * `milestonesReviewed` (approveDelivery: no submitted milestone waits for the client).
    */
-  requires?: "deadlinePassed" | "disputeWindowElapsed" | "escrowFunded" | "expired";
+  requires?: "deadlinePassed" | "disputeWindowElapsed" | "escrowFunded" | "expired" | "milestonesReviewed";
   tone: "primary" | "danger" | "neutral";
   confirmTitle: string;
   confirmBody: string;
@@ -78,6 +79,7 @@ export const ACTIONS: Record<AgreementAction, ActionDefinition> = {
     description: "Approve the work and release the escrow.",
     allowedRoles: ["client"],
     from: ["Delivered"],
+    requires: "milestonesReviewed",
     to: "Completed",
     event: "AgreementCompleted",
     tone: "primary",
@@ -213,6 +215,8 @@ export interface ActionContext {
   escrowFunded?: boolean;
   /** 100 days late without delivery: the penalty reached 100%. */
   expired?: boolean;
+  /** No submitted milestone is waiting for the client's approval. */
+  milestonesReviewed?: boolean;
 }
 
 export function canPerform(
@@ -226,6 +230,7 @@ export function canPerform(
   if (def.requires === "disputeWindowElapsed" && !context.disputeWindowElapsed) return false;
   if (def.requires === "escrowFunded" && !context.escrowFunded) return false;
   if (def.requires === "expired" && !context.expired) return false;
+  if (def.requires === "milestonesReviewed" && !context.milestonesReviewed) return false;
   return def.allowedRoles.includes(role) && def.from.includes(status);
 }
 

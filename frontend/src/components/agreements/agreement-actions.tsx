@@ -65,7 +65,7 @@ interface Props {
 }
 
 export function AgreementActions({ agreement, actualRole, role, onRoleChange }: Props) {
-  const { performAction, mode, nowMs, escrows } = useAppStore();
+  const { performAction, mode, nowMs, escrows, milestones } = useAppStore();
   const wallet = useWallet();
   const toast = useToast();
   const [pending, setPending] = useState<ActionDefinition | null>(null);
@@ -82,6 +82,8 @@ export function AgreementActions({ agreement, actualRole, role, onRoleChange }: 
   const windowElapsed = dispute ? nowMs >= new Date(dispute.windowEndsAt).getTime() : true;
 
   const escrow = escrows.find((e) => e.agreementId === agreement.id);
+  // Submitted milestones the client has not approved yet: the final approval would pay them unchecked.
+  const awaitingReview = milestones.filter((m) => m.agreementId === agreement.id && m.status === "Submitted");
   // On-chain, startWork requires the payment to be locked. Demo escrows are not simulated.
   const escrowFunded = live ? (escrow?.depositedEth ?? 0) > 0 : true;
   // Penalty a delivery made now would get, and the one recorded at delivery.
@@ -94,6 +96,7 @@ export function AgreementActions({ agreement, actualRole, role, onRoleChange }: 
     disputeWindowElapsed: windowElapsed,
     escrowFunded,
     expired: penaltyNow >= MAX_PENALTY,
+    milestonesReviewed: awaitingReview.length === 0,
   });
   const actor = viewRole === "freelancer" ? agreement.freelancer.address : agreement.client.address;
 
@@ -127,7 +130,13 @@ export function AgreementActions({ agreement, actualRole, role, onRoleChange }: 
   const primary = actions.filter((a) => a.tone !== "danger");
   const danger = actions.filter((a) => a.tone === "danger");
   const waiting =
-    agreement.status === "Accepted" && !escrowFunded
+    agreement.status === "Delivered" && awaitingReview.length > 0
+      ? viewRole === "client"
+        ? `Review the ${awaitingReview.length} submitted milestone${awaitingReview.length === 1 ? "" : "s"} in Escrow & Milestones first (${awaitingReview.map((m) => m.title).join(", ")}). No milestone is paid before you approve it.`
+        : viewRole === "freelancer"
+          ? "Waiting for the client to review your submitted milestones, then the delivery."
+          : waitingMessage(viewRole, agreement.status)
+      : agreement.status === "Accepted" && !escrowFunded
       ? viewRole === "freelancer"
         ? "Waiting for the client to fund the escrow: you can start work once the payment is locked."
         : viewRole === "client"
