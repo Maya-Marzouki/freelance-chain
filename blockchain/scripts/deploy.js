@@ -7,6 +7,11 @@ const hre = require("hardhat");
 const CONTRACTS = [
   { name: "ServiceAgreement", args: () => [] },
   { name: "EscrowMilestones", args: (deployed) => [deployed.ServiceAgreement] },
+  // ReputationToken lit A et B pour savoir si une mission est terminee et payee.
+  {
+    name: "ReputationToken",
+    args: (deployed) => [deployed.ServiceAgreement, deployed.EscrowMilestones],
+  },
 ];
 
 async function main() {

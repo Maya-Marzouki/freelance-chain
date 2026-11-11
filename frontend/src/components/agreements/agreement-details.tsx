@@ -11,6 +11,7 @@ import { MilestoneBadge, StatusBadge } from "@/components/ui/status-badge";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { useAppStore } from "@/components/providers/app-store";
 import { EscrowControls } from "@/components/escrow/escrow-controls";
+import { ReputationCard } from "@/components/reputation/reputation-card";
 import { useWallet } from "@/components/wallet/wallet-provider";
 import { daysBetween, formatDate, formatDateTime, formatEth, formatUsd } from "@/lib/utils";
 import type { Agreement, Party, Role } from "@/types/agreement";
@@ -280,6 +281,8 @@ function AgreementDetailsContent({
               {mode === "chain" && <EscrowControls agreement={agreement} role={actualRole} />}
             </CardBody>
           </Card>
+
+          <ReputationCard agreement={agreement} role={actualRole} />
         </div>
       </div>
     </div>
