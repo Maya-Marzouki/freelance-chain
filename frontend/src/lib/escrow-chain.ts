@@ -40,6 +40,7 @@ const REASONS: Record<string, string> = {
   "Agreement not accepted": "The freelancer must accept the agreement before the escrow is funded.",
   "Invalid milestone": "This milestone does not exist.",
   "Milestone already submitted": "This milestone was already submitted.",
+  "Deliverable required": "Add a link to the milestone deliverable before submitting.",
   "Deadline passed": "The milestone deadline has passed.",
   "Milestone not submitted": "The freelancer has not submitted this milestone yet.",
   "Escrow unavailable": "The escrow is not active.",
@@ -105,6 +106,7 @@ export async function readEscrows(
           status: milestoneStatusOf(m.status),
           escrowId: id,
           index: i,
+          deliverableUri: m.deliverableUri || undefined,
         }),
       );
     }),
@@ -182,8 +184,14 @@ export async function fundEscrowOnChain(contract: Contract, escrowId: number): P
   return tx.hash as string;
 }
 
-export async function submitMilestoneOnChain(contract: Contract, escrowId: number, index: number): Promise<string> {
-  const tx = await contract.submitMilestone(escrowId, index);
+/** Submits a milestone with the link to its deliverable (required by the contract). */
+export async function submitMilestoneOnChain(
+  contract: Contract,
+  escrowId: number,
+  index: number,
+  deliverableUri: string,
+): Promise<string> {
+  const tx = await contract.submitMilestone(escrowId, index, deliverableUri);
   await tx.wait();
   return tx.hash as string;
 }

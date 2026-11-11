@@ -1,5 +1,6 @@
 import {
   Activity,
+  Award,
   Briefcase,
   FilePlus2,
   FileText,
@@ -26,6 +27,7 @@ const NAV: Record<UserRole, NavItem[]> = {
     { href: "/agreements", label: "My Agreements", icon: FileText, exact: true },
     { href: "/agreements/create", label: "Create Agreement", icon: FilePlus2 },
     { href: "/escrow", label: "Escrow & Milestones", icon: LockKeyhole },
+    { href: "/rewards", label: "Rewards", icon: Award },
     { href: "/activity", label: "Activity History", icon: Activity },
     { href: "/settings", label: "Settings", icon: Settings },
   ],
@@ -34,6 +36,7 @@ const NAV: Record<UserRole, NavItem[]> = {
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { href: "/agreements", label: "My Jobs", icon: Briefcase, exact: true },
     { href: "/escrow", label: "Milestones & Earnings", icon: Wallet },
+    { href: "/rewards", label: "Rewards", icon: Award },
     { href: "/activity", label: "Activity History", icon: Activity },
     { href: "/settings", label: "Settings", icon: Settings },
   ],

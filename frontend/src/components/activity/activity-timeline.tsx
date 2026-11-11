@@ -1,6 +1,7 @@
 import Link from "@/components/space/link";
 import {
   AlertOctagon,
+  Award,
   Ban,
   BadgeCheck,
   Banknote,
@@ -25,6 +26,7 @@ export const ACTIVITY_META: Record<ActivityType, { label: string; icon: LucideIc
   AgreementCompleted: { label: "Agreement Completed", icon: BadgeCheck, tint: "bg-emerald-50 text-emerald-600" },
   AgreementCancelled: { label: "Agreement Cancelled", icon: Ban, tint: "bg-slate-100 text-slate-500" },
   DisputeRaised: { label: "Dispute Raised", icon: AlertOctagon, tint: "bg-rose-50 text-rose-600" },
+  ReputationRewarded: { label: "Reputation Rewarded", icon: Award, tint: "bg-violet-50 text-violet-600" },
 };
 
 type TimelineItem = AgreementEvent & Partial<Pick<ActivityItem, "agreementId" | "agreementTitle" | "amountEth">>;

@@ -8,8 +8,9 @@ import { useAppStore } from "@/components/providers/app-store";
 import { useToast } from "@/components/providers/toast-provider";
 import { useWallet } from "@/components/wallet/wallet-provider";
 import {
-  CLIENT_RATE,
-  FREELANCER_RATE,
+  LATE_REWARD_PERCENT,
+  expectedRewards,
+  isDeliveredOnTime,
   claimReputation,
   isReputationDeployed,
   readReputation,
@@ -55,6 +56,8 @@ export function ReputationCard({ agreement, role }: Props) {
   if (!enabled) return null;
 
   const eligible = agreement.status === "Completed" && escrow?.status === "Completed";
+  const onTime = isDeliveredOnTime(agreement);
+  const expected = expectedRewards(paid, onTime);
 
   async function claim() {
     setLoading(true);
@@ -77,9 +80,17 @@ export function ReputationCard({ agreement, role }: Props) {
     status = (
       <>
         <p className="text-sm text-slate-500">
-          Mission completed and paid. Reward: {formatFlr(paid * FREELANCER_RATE)} for the freelancer,{" "}
-          {formatFlr(paid * CLIENT_RATE)} for the client.
+          Mission completed and paid. Reward: {formatFlr(expected.freelancerFlr)} for the freelancer,{" "}
+          {formatFlr(expected.clientFlr)} for the client.
         </p>
+        {onTime ? (
+          <p className="text-xs text-emerald-700">Delivered on time: the freelancer gets the full reward.</p>
+        ) : (
+          <p className="text-xs text-amber-700">
+            Not delivered by the deadline: the freelancer gets {LATE_REWARD_PERCENT}% of the reward. The client keeps
+            their full share.
+          </p>
+        )}
         <Button size="sm" loading={loading} onClick={claim}>
           <Award className="size-4" aria-hidden /> Claim reputation
         </Button>

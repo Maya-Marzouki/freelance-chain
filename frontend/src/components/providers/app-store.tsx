@@ -31,6 +31,7 @@ import {
   submitMilestoneOnChain,
 } from "@/lib/escrow-chain";
 import { getEscrowContract, getEscrowReader, isEscrowDeployed } from "@/lib/escrow-contract";
+import { LATE_REWARD_PERCENT, isReputationDeployed, readRewards, type RewardRecord } from "@/lib/reputation-contract";
 import { ACTIONS, NEXT_MILESTONE_STATUS, actionTarget, type MilestoneAction } from "@/lib/lifecycle";
 import { DEMO_USER, MOCK_AGREEMENTS, MOCK_MILESTONES, MOCK_NOW, buildActivityFeed } from "@/lib/mock-data";
 import { HARDHAT_CHAIN_ID, getServiceAgreementContract, hashTerms, isContractDeployed } from "@/lib/ethereum";
@@ -67,7 +68,7 @@ type Event =
       event: AgreementEvent;
       deliverable?: Deliverable;
     }
-  | { type: "milestone"; id: string; action: MilestoneAction; item: ActivityItem };
+  | { type: "milestone"; id: string; action: MilestoneAction; item: ActivityItem; deliverableUri?: string };
 
 function reducer(state: State, e: Event): State {
   switch (e.type) {
@@ -90,7 +91,9 @@ function reducer(state: State, e: Event): State {
       return {
         ...state,
         milestones: state.milestones.map((m) =>
-          m.id === e.id ? { ...m, status: NEXT_MILESTONE_STATUS[e.action] } : m,
+          m.id === e.id
+            ? { ...m, status: NEXT_MILESTONE_STATUS[e.action], deliverableUri: e.deliverableUri ?? m.deliverableUri }
+            : m,
         ),
         extraActivity: [e.item, ...state.extraActivity],
       };
@@ -115,6 +118,12 @@ interface StoreValue extends State {
   escrows: Escrow[];
   /** `EscrowMilestones` is deployed and readable: escrow actions are available. */
   escrowEnabled: boolean;
+  /** Why the escrow contract could not be read (live mode), e.g. it was not redeployed. */
+  escrowError: string | null;
+  /** Reputation (FLR) minted so far, read from `ReputationToken` (live mode only). */
+  rewards: RewardRecord[];
+  /** Why the reputation contract could not be read (live mode), e.g. it was not redeployed. */
+  rewardsError: string | null;
   /** Creates the escrow of an agreement; the total of the milestones must equal its amount. */
   createEscrow: (agreementId: string, milestones: EscrowMilestoneInput[]) => Promise<string>;
   fundEscrow: (escrowId: number) => Promise<string>;
@@ -132,7 +141,13 @@ interface StoreValue extends State {
     actor: string,
     deliverable?: Deliverable,
   ) => Promise<AgreementEvent>;
-  performMilestoneAction: (milestoneId: string, action: MilestoneAction, actor: string) => Promise<string>;
+  /** `deliverableUri` is required for the "submit" action. */
+  performMilestoneAction: (
+    milestoneId: string,
+    action: MilestoneAction,
+    actor: string,
+    deliverableUri?: string,
+  ) => Promise<string>;
 }
 
 const StoreContext = createContext<StoreValue | null>(null);
@@ -142,6 +157,7 @@ const MOCK_LATENCY = 1100;
 const CHAIN_POLL_MS = 5000;
 const NO_MILESTONES: Milestone[] = [];
 const NO_ESCROWS: Escrow[] = [];
+const NO_REWARDS: RewardRecord[] = [];
 
 export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, {
@@ -163,9 +179,12 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     agreements: Agreement[];
     now: number;
     escrowReady: boolean;
+    escrowError: string | null;
     escrows: Escrow[];
     milestones: Milestone[];
     activity: ActivityItem[];
+    rewards: RewardRecord[];
+    rewardsError: string | null;
   }
   const [chain, setChain] = useState<ChainState>({
     status: "idle",
@@ -173,9 +192,12 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     agreements: [],
     now: 0,
     escrowReady: false,
+    escrowError: null,
     escrows: [],
     milestones: [],
     activity: [],
+    rewards: [],
+    rewardsError: null,
   });
 
   const loadChain = useCallback(async (): Promise<Agreement[]> => {
@@ -183,16 +205,60 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     try {
       const [agreements, now] = await Promise.all([readAgreements(contract, provider), readChainTime(provider)]);
       // The escrow contract is optional: agreements keep working if it is missing.
-      let escrowPart = { escrowReady: false, escrows: [] as Escrow[], milestones: [] as Milestone[], activity: [] as ActivityItem[] };
+      let escrowPart = {
+        escrowReady: false,
+        escrowError: null as string | null,
+        escrows: [] as Escrow[],
+        milestones: [] as Milestone[],
+        activity: [] as ActivityItem[],
+      };
       if (isEscrowDeployed) {
         try {
           const reader = getEscrowReader();
-          escrowPart = { escrowReady: true, ...(await readEscrows(reader.contract, reader.provider, agreements)) };
-        } catch {
-          /* escrow contract not reachable at the saved address */
+          escrowPart = { ...escrowPart, escrowReady: true, ...(await readEscrows(reader.contract, reader.provider, agreements)) };
+        } catch (err) {
+          // Usually the contract on the node is older than the ABI in `src/contracts` (not redeployed).
+          console.error("EscrowMilestones could not be read:", err);
+          escrowPart = {
+            ...escrowPart,
+            escrowError:
+              "The escrow contract on the local node does not match this version of the app. Run npm run deploy:local in the blockchain folder, then reload.",
+          };
         }
       }
-      setChain({ status: "ready", error: null, agreements, now, ...escrowPart });
+      // The reputation token is optional too: rewards and their history events.
+      let rewards: RewardRecord[] = [];
+      let rewardsError: string | null = null;
+      if (isReputationDeployed) {
+        try {
+          rewards = await readRewards(new Map(agreements.map((a) => [a.id, a.title])));
+        } catch (err) {
+          // Usually the token on the node is older than the ABI in `src/contracts` (not redeployed).
+          console.error("ReputationToken could not be read:", err);
+          rewardsError =
+            "The reputation contract on the local node does not match this version of the app. Run npm run deploy:local in the blockchain folder, then reload.";
+        }
+      }
+      const rewardActivity: ActivityItem[] = rewards.map((r) => ({
+        id: r.id,
+        type: "ReputationRewarded",
+        date: r.date,
+        actor: r.actor,
+        txHash: r.txHash,
+        agreementId: r.agreementId,
+        agreementTitle: r.agreementTitle,
+        note: `+${r.freelancerFlr} FLR freelancer${r.onTime ? "" : ` (late delivery, ${LATE_REWARD_PERCENT}%)`}, +${r.clientFlr} FLR client`,
+      }));
+      setChain({
+        status: "ready",
+        error: null,
+        agreements,
+        now,
+        ...escrowPart,
+        activity: [...escrowPart.activity, ...rewardActivity],
+        rewards,
+        rewardsError,
+      });
       return agreements;
     } catch (err) {
       setChain((c) => ({ ...c, status: "error", error: chainErrorMessage(err, contract) }));
@@ -221,6 +287,9 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   const milestones = chainMode ? (chain.escrowReady ? chain.milestones : NO_MILESTONES) : state.milestones;
   const escrows = chainMode ? chain.escrows : NO_ESCROWS;
   const escrowEnabled = chainMode && chain.escrowReady;
+  const escrowError = chainMode ? chain.escrowError : null;
+  const rewards = chainMode ? chain.rewards : NO_REWARDS;
+  const rewardsError = chainMode ? chain.rewardsError : null;
   const chainStatus: ChainStatus = chainMode ? (chain.status === "idle" ? "loading" : chain.status) : "idle";
 
   const getAgreement = useCallback((id: string) => agreements.find((a) => a.id === id), [agreements]);
@@ -376,7 +445,10 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   const settleEscrow = useCallback((id: number) => withEscrow((c) => settleEscrowOnChain(c, id)), [withEscrow]);
 
   const performMilestoneAction = useCallback(
-    async (milestoneId: string, action: MilestoneAction, actor: string) => {
+    async (milestoneId: string, action: MilestoneAction, actor: string, deliverableUri?: string) => {
+      if (action === "submit" && !deliverableUri) {
+        throw new Error("Add a link to the milestone deliverable before submitting.");
+      }
       if (chainMode) {
         const target = chain.milestones.find((m) => m.id === milestoneId);
         if (!target || target.escrowId === undefined || target.index === undefined) {
@@ -385,7 +457,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
         const { escrowId, index, status } = target;
         return withEscrow((contract) =>
           action === "submit"
-            ? submitMilestoneOnChain(contract, escrowId, index)
+            ? submitMilestoneOnChain(contract, escrowId, index, deliverableUri!)
             : releaseMilestoneOnChain(contract, escrowId, index, status),
         );
       }
@@ -398,6 +470,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
           type: "milestone",
           id: milestoneId,
           action,
+          deliverableUri,
           item: {
             id: `${milestoneId}-${action}-${Date.now()}`,
             type: action === "release" ? "PaymentReleased" : "MilestoneSubmitted",
@@ -436,6 +509,9 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       refresh,
       escrows,
       escrowEnabled,
+      escrowError,
+      rewards,
+      rewardsError,
       createEscrow,
       fundEscrow,
       settleEscrow,
@@ -459,6 +535,9 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       refresh,
       escrows,
       escrowEnabled,
+      escrowError,
+      rewards,
+      rewardsError,
       createEscrow,
       fundEscrow,
       settleEscrow,
