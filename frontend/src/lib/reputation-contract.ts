@@ -39,6 +39,50 @@ export async function readReputation(account: string | null, agreementOnChainId:
   };
 }
 
+/** One `ReputationRewarded` event: the FLR minted for a finished agreement. */
+export interface RewardRecord {
+  id: string;
+  agreementId: string;
+  agreementTitle: string;
+  freelancer: string;
+  client: string;
+  freelancerFlr: number;
+  clientFlr: number;
+  date: string; // ISO
+  txHash: string;
+  /** Who sent the claim transaction. */
+  actor: string;
+}
+
+/** Every reward minted so far, newest first. */
+export async function readRewards(titles: Map<string, string>): Promise<RewardRecord[]> {
+  const contract = reader();
+  const provider = getLocalProvider();
+  const logs = await contract.queryFilter(contract.filters.ReputationRewarded());
+  const records = await Promise.all(
+    logs.map(async (log): Promise<RewardRecord> => {
+      const args = (log as unknown as {
+        args: { agreementId: bigint; freelancer: string; client: string; freelancerReward: bigint; clientReward: bigint };
+      }).args;
+      const [block, tx] = await Promise.all([provider.getBlock(log.blockNumber), log.getTransaction()]);
+      const agreementId = `AGR-${Number(args.agreementId)}`;
+      return {
+        id: `${log.transactionHash}-${log.index}`,
+        agreementId,
+        agreementTitle: titles.get(agreementId) ?? agreementId,
+        freelancer: args.freelancer,
+        client: args.client,
+        freelancerFlr: Number(formatUnits(args.freelancerReward, 18)),
+        clientFlr: Number(formatUnits(args.clientReward, 18)),
+        date: new Date(Number(block?.timestamp ?? 0) * 1000).toISOString(),
+        txHash: log.transactionHash,
+        actor: tx.from,
+      };
+    }),
+  );
+  return records.sort((a, b) => b.date.localeCompare(a.date));
+}
+
 /** Mints the reputation of a finished, fully paid agreement. Anyone can call it. */
 export async function claimReputation(agreementOnChainId: number, signer?: Signer): Promise<string> {
   if (!isReputationDeployed) throw new Error("ReputationToken contract is not deployed yet.");

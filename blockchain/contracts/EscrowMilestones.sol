@@ -33,6 +33,8 @@ contract EscrowMilestones is ReentrancyGuard {
         uint256 amount;
         uint256 deadline;
         MilestoneStatus status;
+        /// @dev Lien vers le livrable du jalon, fourni a la soumission (vide avant).
+        string deliverableUri;
     }
 
     struct Escrow {
@@ -79,7 +81,8 @@ contract EscrowMilestones is ReentrancyGuard {
 
     event MilestoneSubmitted(
         uint256 indexed escrowId,
-        uint256 milestoneId
+        uint256 milestoneId,
+        string deliverableUri
     );
 
     event MilestoneApproved(
@@ -189,7 +192,8 @@ contract EscrowMilestones is ReentrancyGuard {
                 description: descriptions[i],
                 amount: amounts[i],
                 deadline: deadlines[i],
-                status: MilestoneStatus.Pending
+                status: MilestoneStatus.Pending,
+                deliverableUri: ""
             });
         }
 
@@ -237,11 +241,15 @@ contract EscrowMilestones is ReentrancyGuard {
         emit FundsDeposited(escrowId, msg.value);
     }
 
-    function submitMilestone(uint256 escrowId, uint256 milestoneId)
+    /// @notice Le freelance soumet un jalon avec le lien de son livrable : le client
+    ///         verifie le travail jalon par jalon avant d'approuver.
+    function submitMilestone(uint256 escrowId, uint256 milestoneId, string calldata deliverableUri)
         external
         escrowExists(escrowId)
         onlyFreelancer(escrowId)
     {
+        require(bytes(deliverableUri).length > 0, "Deliverable required");
+
         Escrow storage escrow = escrows[escrowId];
 
         require(
@@ -271,9 +279,10 @@ contract EscrowMilestones is ReentrancyGuard {
         );
 
         milestone.status = MilestoneStatus.Submitted;
+        milestone.deliverableUri = deliverableUri;
         escrow.status = EscrowStatus.InProgress;
 
-        emit MilestoneSubmitted(escrowId, milestoneId);
+        emit MilestoneSubmitted(escrowId, milestoneId, deliverableUri);
     }
 
     function approveMilestone(uint256 escrowId, uint256 milestoneId)

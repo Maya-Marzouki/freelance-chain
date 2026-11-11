@@ -3,6 +3,7 @@ const { ethers } = require("hardhat");
 const { time } = require("@nomicfoundation/hardhat-toolbox/network-helpers");
 
 const DELIVERABLE_URI = "https://example.com/livrable.zip";
+const MILESTONE_URI = "https://github.com/demo/site/commit/abc123";
 const DELIVERABLE_HASH = ethers.keccak256(ethers.toUtf8Bytes("contenu du livrable"));
 
 // ReputationToken (C) lit ServiceAgreement (A) et EscrowMilestones (B) : la reputation
@@ -84,7 +85,7 @@ describe("ReputationToken", function () {
   it("fonctionne aussi quand tous les jalons ont ete liberes un par un", async function () {
     await createFundAndStart();
     for (let i = 0; i < 2; i++) {
-      await escrow.connect(freelancer).submitMilestone(1, i);
+      await escrow.connect(freelancer).submitMilestone(1, i, MILESTONE_URI);
       await escrow.connect(client).approveMilestone(1, i);
       await escrow.connect(client).releasePayment(1, i);
     }

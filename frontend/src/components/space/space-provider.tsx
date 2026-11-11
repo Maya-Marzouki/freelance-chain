@@ -15,7 +15,7 @@ export function useSpace(): UserRole | null {
 }
 
 /** Pages that exist inside each role's space. */
-const SPACE_PAGES = ["/dashboard", "/agreements", "/escrow", "/activity", "/settings"];
+const SPACE_PAGES = ["/dashboard", "/agreements", "/escrow", "/rewards", "/activity", "/settings"];
 
 /** Prefixes an in-app path with the space (`/agreements/1` -> `/client/agreements/1`). Other paths are untouched. */
 export function spacePath(role: UserRole | null, href: string): string {

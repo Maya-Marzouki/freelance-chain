@@ -131,6 +131,12 @@
           "internalType": "uint256",
           "name": "milestoneId",
           "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "deliverableUri",
+          "type": "string"
         }
       ],
       "name": "MilestoneSubmitted",
@@ -435,6 +441,11 @@
               "internalType": "enum EscrowMilestones.MilestoneStatus",
               "name": "status",
               "type": "uint8"
+            },
+            {
+              "internalType": "string",
+              "name": "deliverableUri",
+              "type": "string"
             }
           ],
           "internalType": "struct EscrowMilestones.Milestone",
@@ -484,6 +495,11 @@
           "internalType": "enum EscrowMilestones.MilestoneStatus",
           "name": "status",
           "type": "uint8"
+        },
+        {
+          "internalType": "string",
+          "name": "deliverableUri",
+          "type": "string"
         }
       ],
       "stateMutability": "view",
@@ -531,6 +547,11 @@
           "internalType": "uint256",
           "name": "milestoneId",
           "type": "uint256"
+        },
+        {
+          "internalType": "string",
+          "name": "deliverableUri",
+          "type": "string"
         }
       ],
       "name": "submitMilestone",

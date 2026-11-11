@@ -98,6 +98,8 @@ export interface Milestone {
   /** On-chain position, set when the milestone is read from `EscrowMilestones`. */
   escrowId?: number;
   index?: number;
+  /** Link to the work, provided by the freelancer when submitting the milestone. */
+  deliverableUri?: string;
 }
 
 /**
@@ -138,7 +140,8 @@ export type ActivityType =
   | "AgreementCompleted"
   | "AgreementCancelled"
   | "DisputeRaised"
-  | "MilestoneSubmitted";
+  | "MilestoneSubmitted"
+  | "ReputationRewarded";
 
 export interface ActivityItem extends AgreementEvent {
   agreementId: string;
