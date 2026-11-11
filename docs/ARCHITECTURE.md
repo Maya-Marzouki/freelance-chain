@@ -99,13 +99,11 @@ Limites assumees : le role et le nom sont stockes dans le navigateur (localStora
 
 ## Livrable : preuve de livraison
 
-`markDelivered(id, deliverableHash, uri)` : le freelance fournit un lien vers son travail et le hash keccak256 de son contenu (meme principe que `termsHash`). Le contrat stocke les deux dans `deliverables[id]` et emet `DeliverySubmitted`. Un hash nul ou un lien vide sont refuses (`InvalidParameters`).
+`markDelivered(id, deliverableHash, uri)` : le freelance fournit le lien vers son travail (depot, drive, IPFS). Le front calcule `deliverableHash` = keccak256 du lien. Le contrat stocke les deux dans `deliverables[id]` et emet `DeliverySubmitted`. Un hash nul ou un lien vide sont refuses (`InvalidParameters`).
 
-- Le fichier reste hors chaine : le navigateur calcule le hash localement, rien n'est envoye.
-- Sans fichier joint, le hash porte sur le lien seul (il prouve le lien, pas le contenu).
-- Le client ouvre le lien dans la carte "Deliverable" et peut deposer le fichier recu pour verifier qu'il correspond au hash enregistre.
+Le client ouvre le lien dans la carte "Deliverable" de la page detail, puis valide (`approveDelivery`) ou ouvre un litige (`raiseDispute`).
 
-Le contrat garantit **qui** a livre, **quand** (`deliveredAt`) et **quoi** (le hash). Il ne juge pas la qualite : c'est le client qui valide (`approveDelivery`) ou ouvre un litige (`raiseDispute`), et en cas de litige le hash sert de preuve que le livrable n'a pas ete modifie apres coup.
+Le contrat garantit **qui** a livre, **quand** (`deliveredAt`) et **ou** (le lien enregistre, qui ne peut plus changer). Il ne juge pas la qualite, et il ne fige pas le contenu derriere le lien : un depot peut encore evoluer. Pour figer le contenu, on peut donner un lien vers un commit ou un tag precis (ou un CID IPFS).
 
 ## Contrat C : `ReputationToken` (token FLR)
 

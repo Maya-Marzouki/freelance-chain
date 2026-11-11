@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
-import { hashFile, hashLink, isValidLink } from "@/lib/deliverable";
+import { hashLink, isValidLink } from "@/lib/deliverable";
 import { Card, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/modal";
 import { Segmented } from "@/components/ui/misc";
@@ -69,7 +69,6 @@ export function AgreementActions({ agreement, actualRole, role, onRoleChange }: 
   const [loading, setLoading] = useState(false);
   // Delivery form (only used by the "deliver" action).
   const [deliveryLink, setDeliveryLink] = useState("");
-  const [deliveryFile, setDeliveryFile] = useState<File | null>(null);
   const [deliveryError, setDeliveryError] = useState<string | null>(null);
 
   const live = mode === "chain";
@@ -94,13 +93,11 @@ export function AgreementActions({ agreement, actualRole, role, onRoleChange }: 
         return;
       }
       setDeliveryError(null);
+      const uri = deliveryLink.trim();
+      deliverable = { uri, hash: hashLink(uri) };
     }
     setLoading(true);
     try {
-      if (pending.action === "deliver") {
-        const uri = deliveryLink.trim();
-        deliverable = { uri, hash: deliveryFile ? await hashFile(deliveryFile) : hashLink(uri) };
-      }
       await performAction(agreement.id, pending.action, actor, deliverable);
       toast.success(
         `${ACTIONS[pending.action].label}: done`,
@@ -263,22 +260,6 @@ export function AgreementActions({ agreement, actualRole, role, onRoleChange }: 
                   value={deliveryLink}
                   onChange={(e) => setDeliveryLink(e.target.value)}
                   disabled={loading}
-                />
-              )}
-            </Field>
-            <Field
-              label="File to fingerprint"
-              optional
-              hint="Its keccak256 hash is stored on-chain, so the client can check they received the exact same file. The file itself is not uploaded."
-            >
-              {({ id, describedBy }) => (
-                <input
-                  id={id}
-                  aria-describedby={describedBy}
-                  type="file"
-                  onChange={(e) => setDeliveryFile(e.target.files?.[0] ?? null)}
-                  disabled={loading}
-                  className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-brand-700"
                 />
               )}
             </Field>
