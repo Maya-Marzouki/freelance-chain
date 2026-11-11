@@ -2,6 +2,10 @@ const { expect } = require("chai");
 const { ethers } = require("hardhat");
 const { time } = require("@nomicfoundation/hardhat-toolbox/network-helpers");
 
+const DELIVERABLE_URI = "https://example.com/livrable.zip";
+const MILESTONE_URI = "https://github.com/demo/site/commit/abc123";
+const DELIVERABLE_HASH = ethers.keccak256(ethers.toUtf8Bytes("contenu du livrable"));
+
 // ServiceAgreement (A) holds the agreement and its status, EscrowMilestones (B) holds the funds.
 // No arbiter: a dispute ends by a party conceding or by the automatic rule of A, and B follows
 // the final status of A (`settle`).
@@ -46,7 +50,7 @@ describe("ServiceAgreement + EscrowMilestones", function () {
     await fundAndStart();
 
     for (let i = 0; i < 2; i++) {
-      await escrow.connect(freelancer).submitMilestone(1, i);
+      await escrow.connect(freelancer).submitMilestone(1, i, MILESTONE_URI);
       await escrow.connect(client).approveMilestone(1, i);
       await expect(escrow.connect(client).releasePayment(1, i)).to.changeEtherBalance(freelancer, amounts[i]);
     }
@@ -54,7 +58,7 @@ describe("ServiceAgreement + EscrowMilestones", function () {
     expect(e.status).to.equal(3n); // Completed
     expect(e.releasedAmount).to.equal(total);
 
-    await agreements.connect(freelancer).markDelivered(1);
+    await agreements.connect(freelancer).markDelivered(1, DELIVERABLE_HASH, DELIVERABLE_URI);
     await agreements.connect(client).approveDelivery(1);
     expect((await agreements.getAgreement(1)).status).to.equal(4n); // Completed
     expect(await ethers.provider.getBalance(await escrow.getAddress())).to.equal(0n);
@@ -63,12 +67,12 @@ describe("ServiceAgreement + EscrowMilestones", function () {
 
   it("litige : le client cede, le freelance recoit le solde", async function () {
     await fundAndStart();
-    await escrow.connect(freelancer).submitMilestone(1, 0);
+    await escrow.connect(freelancer).submitMilestone(1, 0, MILESTONE_URI);
     await escrow.connect(client).approveMilestone(1, 0);
     await escrow.connect(client).releasePayment(1, 0); // 1 ETH deja paye
 
     await agreements.connect(client).raiseDispute(1);
-    await expect(escrow.connect(freelancer).submitMilestone(1, 1)).to.be.revertedWith("Agreement frozen");
+    await expect(escrow.connect(freelancer).submitMilestone(1, 1, MILESTONE_URI)).to.be.revertedWith("Agreement frozen");
     await expect(escrow.settle(1)).to.be.revertedWith("Agreement not finished");
 
     await agreements.connect(client).concede(1); // le client reconnait sa faute
@@ -79,7 +83,7 @@ describe("ServiceAgreement + EscrowMilestones", function () {
 
   it("litige : le freelance cede, le client est rembourse du solde", async function () {
     await fundAndStart();
-    await escrow.connect(freelancer).submitMilestone(1, 0);
+    await escrow.connect(freelancer).submitMilestone(1, 0, MILESTONE_URI);
     await escrow.connect(client).approveMilestone(1, 0);
     await escrow.connect(client).releasePayment(1, 0);
 
@@ -92,7 +96,7 @@ describe("ServiceAgreement + EscrowMilestones", function () {
 
   it("litige sans cession : la regle automatique donne gain au freelance livre a temps", async function () {
     await fundAndStart();
-    await agreements.connect(freelancer).markDelivered(1);
+    await agreements.connect(freelancer).markDelivered(1, DELIVERABLE_HASH, DELIVERABLE_URI);
     await agreements.connect(client).raiseDispute(1);
 
     await expect(agreements.connect(stranger).resolveDispute(1)).to.be.revertedWithCustomError(agreements, "DisputeWindowOpen");
@@ -123,7 +127,7 @@ describe("ServiceAgreement + EscrowMilestones", function () {
     await fundAndStart();
     await expect(agreements.connect(stranger).cancel(1)).to.be.revertedWithCustomError(agreements, "NotClient");
     await expect(agreements.connect(stranger).concede(1)).to.be.revertedWithCustomError(agreements, "NotParty");
-    await expect(escrow.connect(stranger).submitMilestone(1, 0)).to.be.revertedWith("Only freelancer");
+    await expect(escrow.connect(stranger).submitMilestone(1, 0, MILESTONE_URI)).to.be.revertedWith("Only freelancer");
     await expect(escrow.connect(stranger).releasePayment(1, 0)).to.be.revertedWith("Only client");
   });
 });

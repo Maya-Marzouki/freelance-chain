@@ -180,6 +180,12 @@
           "internalType": "uint256",
           "name": "clientReward",
           "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "bool",
+          "name": "onTime",
+          "type": "bool"
         }
       ],
       "name": "ReputationRewarded",
@@ -226,6 +232,19 @@
     {
       "inputs": [],
       "name": "FREELANCER_RATE",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "LATE_REWARD_PERCENT",
       "outputs": [
         {
           "internalType": "uint256",
@@ -350,6 +369,25 @@
           "internalType": "contract EscrowMilestones",
           "name": "",
           "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "agreementId",
+          "type": "uint256"
+        }
+      ],
+      "name": "isDeliveredOnTime",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
         }
       ],
       "stateMutability": "view",

@@ -2,8 +2,21 @@
 
 import { useMemo, useState } from "react";
 import Link from "@/components/space/link";
-import { ArrowUpRight, Banknote, CalendarClock, Check, ChevronDown, Lock, LockKeyhole, Send, Vault } from "lucide-react";
+import {
+  ArrowUpRight,
+  Banknote,
+  CalendarClock,
+  Check,
+  ChevronDown,
+  ExternalLink,
+  Lock,
+  LockKeyhole,
+  Send,
+  Vault,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Field, Input } from "@/components/ui/input";
+import { isValidLink } from "@/lib/deliverable";
 import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/modal";
 import { EmptyState, PageHeader, ProgressBar, Segmented } from "@/components/ui/misc";
@@ -28,7 +41,7 @@ interface Pending {
 }
 
 export function EscrowView() {
-  const { roleFor, performMilestoneAction, mode } = useAppStore();
+  const { roleFor, performMilestoneAction, mode, escrowError } = useAppStore();
   const { agreements, milestones, escrows: chainEscrows } = useScoped();
   const live = mode === "chain";
   const wallet = useWallet();
@@ -37,6 +50,9 @@ export function EscrowView() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [pending, setPending] = useState<Pending | null>(null);
   const [loading, setLoading] = useState(false);
+  // Deliverable link of the milestone being submitted.
+  const [link, setLink] = useState("");
+  const [linkError, setLinkError] = useState<string | null>(null);
 
   const escrows = useMemo(
     () =>
@@ -72,12 +88,28 @@ export function EscrowView() {
 
   const roleOf = (a: Agreement): Role => (live || perspective === "auto" ? roleFor(a, wallet.address) : perspective);
 
+  function open(next: Pending) {
+    setLink("");
+    setLinkError(null);
+    setPending(next);
+  }
+
   async function confirm() {
     if (!pending) return;
+    if (pending.action === "submit" && !isValidLink(link)) {
+      setLinkError("Enter a valid link (https:// or ipfs://) to this milestone's deliverable.");
+      return;
+    }
+    setLinkError(null);
     setLoading(true);
     try {
       const actor = pending.role === "client" ? pending.agreement.client.address : pending.agreement.freelancer.address;
-      await performMilestoneAction(pending.milestone.id, pending.action, actor);
+      await performMilestoneAction(
+        pending.milestone.id,
+        pending.action,
+        actor,
+        pending.action === "submit" ? link.trim() : undefined,
+      );
       toast.success(
         pending.action === "release" ? "Payment released" : "Milestone submitted",
         pending.action === "release"
@@ -148,7 +180,12 @@ export function EscrowView() {
       </div>
 
       <div className="mt-6 space-y-4">
-        {escrows.length === 0 && (
+        {escrowError && (
+          <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800" role="alert">
+            {escrowError}
+          </p>
+        )}
+        {escrows.length === 0 && !escrowError && (
           <Card>
             <EmptyState
               icon={<LockKeyhole />}
@@ -242,6 +279,18 @@ export function EscrowView() {
                             <p className="mt-1.5 flex items-center gap-1.5 text-xs text-slate-500">
                               <CalendarClock className="size-3.5" aria-hidden /> Due {formatDate(m.dueDate)}
                             </p>
+                            {m.deliverableUri && (
+                              <a
+                                href={m.deliverableUri}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-1.5 inline-flex max-w-full items-center gap-1.5 text-xs font-medium break-all text-brand-600 hover:text-brand-700"
+                              >
+                                <ExternalLink className="size-3.5 shrink-0" aria-hidden />
+                                {role === "client" && m.status === "Submitted" ? "Review deliverable: " : "Deliverable: "}
+                                {m.deliverableUri}
+                              </a>
+                            )}
                           </div>
                           <div className="flex items-center justify-between gap-4 sm:flex-col sm:items-end sm:justify-center">
                             <p className="text-sm font-semibold text-navy-900">{formatEth(m.amountEth)}</p>
@@ -249,7 +298,7 @@ export function EscrowView() {
                               <Button
                                 size="sm"
                                 variant={action === "release" ? "primary" : "secondary"}
-                                onClick={() => setPending({ milestone: m, agreement, action, role })}
+                                onClick={() => open({ milestone: m, agreement, action, role })}
                               >
                                 {action === "release" ? (
                                   <>
@@ -313,7 +362,7 @@ export function EscrowView() {
             ? live && pending.milestone.status === "Submitted"
               ? `${formatEth(pending.milestone.amountEth)} will be released to ${pending.agreement.freelancer.name}. MetaMask asks for two confirmations: approve the milestone, then release the payment. This cannot be undone.`
               : `${formatEth(pending.milestone.amountEth)} will be released from escrow to ${pending.agreement.freelancer.name}. This cannot be undone.`
-            : "The client will be notified to review and approve this milestone."
+            : "Share a link to the work of this milestone. The client reviews it before approving and releasing the payment."
         }
         confirmLabel={pending?.action === "release" ? (pending.milestone.status === "Approved" ? "Release payment" : "Approve & Release") : "Submit"}
         icon={
@@ -324,6 +373,38 @@ export function EscrowView() {
           )
         }
       >
+        {pending?.action === "submit" && (
+          <Field
+            className="mb-4"
+            label="Link to the deliverable"
+            error={linkError ?? undefined}
+            hint="Repository, commit, shared drive or IPFS link for this milestone."
+          >
+            {({ id, describedBy, invalid }) => (
+              <Input
+                id={id}
+                aria-describedby={describedBy}
+                invalid={invalid}
+                type="url"
+                placeholder="https://…"
+                value={link}
+                onChange={(e) => setLink(e.target.value)}
+                disabled={loading}
+              />
+            )}
+          </Field>
+        )}
+        {pending?.action === "release" && pending.milestone.deliverableUri && (
+          <a
+            href={pending.milestone.deliverableUri}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mb-4 flex items-center gap-2 text-sm font-medium break-all text-brand-600 hover:text-brand-700"
+          >
+            <ExternalLink className="size-4 shrink-0" aria-hidden />
+            Review the deliverable before approving
+          </a>
+        )}
         {pending && (
           <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-4 text-sm">
             <p className="font-medium text-navy-900">{pending.milestone.title}</p>

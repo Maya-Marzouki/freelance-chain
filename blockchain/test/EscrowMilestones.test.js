@@ -2,6 +2,10 @@ const { expect } = require("chai");
 const { ethers } = require("hardhat");
 const { time } = require("@nomicfoundation/hardhat-toolbox/network-helpers");
 
+const DELIVERABLE_URI = "https://example.com/livrable.zip";
+const MILESTONE_URI = "https://github.com/demo/site/commit/abc123";
+const DELIVERABLE_HASH = ethers.keccak256(ethers.toUtf8Bytes("contenu du livrable"));
+
 describe("EscrowMilestones", function () {
   let agreements;
   let escrow;
@@ -197,7 +201,7 @@ describe("EscrowMilestones", function () {
       await createFundedEscrow();
 
       // 1. Freelancer submits the first milestone
-      await escrow.connect(freelancer).submitMilestone(1, 0);
+      await escrow.connect(freelancer).submitMilestone(1, 0, MILESTONE_URI);
 
       let milestone = await escrow.getMilestone(1, 0);
       expect(milestone.status).to.equal(1); // Submitted
@@ -226,7 +230,7 @@ describe("EscrowMilestones", function () {
       await createFundedEscrow();
 
       for (let i = 0; i < 2; i++) {
-        await escrow.connect(freelancer).submitMilestone(1, i);
+        await escrow.connect(freelancer).submitMilestone(1, i, MILESTONE_URI);
         await escrow.connect(client).approveMilestone(1, i);
         await escrow.connect(client).releasePayment(1, i);
       }
@@ -234,11 +238,29 @@ describe("EscrowMilestones", function () {
       expect((await escrow.getEscrow(1)).status).to.equal(3); // Completed
     });
 
+    it("Should record the deliverable link of a submitted milestone", async function () {
+      await createFundedEscrow();
+
+      await expect(escrow.connect(freelancer).submitMilestone(1, 0, MILESTONE_URI))
+        .to.emit(escrow, "MilestoneSubmitted")
+        .withArgs(1, 0, MILESTONE_URI);
+      expect((await escrow.getMilestone(1, 0)).deliverableUri).to.equal(MILESTONE_URI);
+      expect((await escrow.getMilestone(1, 1)).deliverableUri).to.equal("");
+    });
+
+    it("Should refuse a milestone submitted without a deliverable", async function () {
+      await createFundedEscrow();
+
+      await expect(
+        escrow.connect(freelancer).submitMilestone(1, 0, "")
+      ).to.be.revertedWith("Deliverable required");
+    });
+
     it("Should prevent an unauthorized user from submitting a milestone", async function () {
       await createFundedEscrow();
 
       await expect(
-        escrow.connect(other).submitMilestone(1, 0)
+        escrow.connect(other).submitMilestone(1, 0, MILESTONE_URI)
       ).to.be.revertedWith("Only freelancer");
     });
 
@@ -249,10 +271,10 @@ describe("EscrowMilestones", function () {
         escrow.connect(client).approveMilestone(1, 0)
       ).to.be.revertedWith("Milestone not submitted");
 
-      await escrow.connect(freelancer).submitMilestone(1, 0);
+      await escrow.connect(freelancer).submitMilestone(1, 0, MILESTONE_URI);
 
       await expect(
-        escrow.connect(freelancer).submitMilestone(1, 0)
+        escrow.connect(freelancer).submitMilestone(1, 0, MILESTONE_URI)
       ).to.be.revertedWith("Milestone already submitted");
 
       await expect(
@@ -260,7 +282,7 @@ describe("EscrowMilestones", function () {
       ).to.be.revertedWith("Milestone not approved");
 
       await expect(
-        escrow.connect(freelancer).submitMilestone(1, 9)
+        escrow.connect(freelancer).submitMilestone(1, 9, MILESTONE_URI)
       ).to.be.revertedWith("Invalid milestone");
     });
 
@@ -269,14 +291,14 @@ describe("EscrowMilestones", function () {
       await time.increaseTo(deadlines[0] + 1);
 
       await expect(
-        escrow.connect(freelancer).submitMilestone(1, 0)
+        escrow.connect(freelancer).submitMilestone(1, 0, MILESTONE_URI)
       ).to.be.revertedWith("Deadline passed");
     });
 
     it("Should freeze milestones while the agreement is disputed", async function () {
       await createFundedEscrow();
       await agreements.connect(freelancer).startWork(1);
-      await escrow.connect(freelancer).submitMilestone(1, 0);
+      await escrow.connect(freelancer).submitMilestone(1, 0, MILESTONE_URI);
       await escrow.connect(client).approveMilestone(1, 0);
       await agreements.connect(client).raiseDispute(1);
 
@@ -284,7 +306,7 @@ describe("EscrowMilestones", function () {
         escrow.connect(client).releasePayment(1, 0)
       ).to.be.revertedWith("Agreement frozen");
       await expect(
-        escrow.connect(freelancer).submitMilestone(1, 1)
+        escrow.connect(freelancer).submitMilestone(1, 1, MILESTONE_URI)
       ).to.be.revertedWith("Agreement frozen");
       await expect(
         escrow.connect(client).approveMilestone(1, 1)
@@ -296,7 +318,7 @@ describe("EscrowMilestones", function () {
     it("Should pay the freelancer the remaining funds once the agreement is completed", async function () {
       await createFundedEscrow();
       await agreements.connect(freelancer).startWork(1);
-      await agreements.connect(freelancer).markDelivered(1);
+      await agreements.connect(freelancer).markDelivered(1, DELIVERABLE_HASH, DELIVERABLE_URI);
       await agreements.connect(client).approveDelivery(1);
 
       await expect(
@@ -322,7 +344,7 @@ describe("EscrowMilestones", function () {
     it("Should only refund what was not released yet", async function () {
       await createFundedEscrow();
       await agreements.connect(freelancer).startWork(1);
-      await escrow.connect(freelancer).submitMilestone(1, 0);
+      await escrow.connect(freelancer).submitMilestone(1, 0, MILESTONE_URI);
       await escrow.connect(client).approveMilestone(1, 0);
       await escrow.connect(client).releasePayment(1, 0);
       await agreements.connect(client).raiseDispute(1);

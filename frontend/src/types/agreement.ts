@@ -74,6 +74,16 @@ export interface Agreement {
   timeline: AgreementEvent[];
   /** Present when the agreement was ever disputed (live mode). */
   dispute?: DisputeInfo;
+  /** Deliverable submitted by the freelancer: link and keccak256 hash of its content. */
+  deliverable?: Deliverable;
+  /** When the freelancer called `markDelivered` (ISO, live mode). Decides the on-time reward. */
+  deliveredAt?: string;
+}
+
+/** Proof of a delivery: the file stays off-chain, only its hash is on-chain. */
+export interface Deliverable {
+  hash: string;
+  uri: string;
 }
 
 /** Mirrors `EscrowMilestones.MilestoneStatus`; the demo flow never uses "Approved". */
@@ -90,6 +100,8 @@ export interface Milestone {
   /** On-chain position, set when the milestone is read from `EscrowMilestones`. */
   escrowId?: number;
   index?: number;
+  /** Link to the work, provided by the freelancer when submitting the milestone. */
+  deliverableUri?: string;
 }
 
 /**
@@ -130,7 +142,8 @@ export type ActivityType =
   | "AgreementCompleted"
   | "AgreementCancelled"
   | "DisputeRaised"
-  | "MilestoneSubmitted";
+  | "MilestoneSubmitted"
+  | "ReputationRewarded";
 
 export interface ActivityItem extends AgreementEvent {
   agreementId: string;

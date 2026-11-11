@@ -97,6 +97,18 @@ Fichiers : `lib/profile.ts` (compte), `components/auth/` (session, pages), `comp
 
 Limites assumees : le role et le nom sont stockes dans le navigateur (localStorage, par adresse et par origine) ; ce n'est pas une permission sur la blockchain, ou les donnees restent publiques. Les contrats imposent qui peut faire quoi sur chaque accord. Un compte cree sur `localhost:3000` n'existe pas sur un autre port.
 
+## Livrable : preuve de livraison
+
+`markDelivered(id, deliverableHash, uri)` : le freelance fournit le lien vers son travail (depot, drive, IPFS). Le front calcule `deliverableHash` = keccak256 du lien. Le contrat stocke les deux dans `deliverables[id]` et emet `DeliverySubmitted`. Un hash nul ou un lien vide sont refuses (`InvalidParameters`).
+
+Le client ouvre le lien dans la carte "Deliverable" de la page detail, puis valide (`approveDelivery`) ou ouvre un litige (`raiseDispute`).
+
+Le contrat garantit **qui** a livre, **quand** (`deliveredAt`) et **ou** (le lien enregistre, qui ne peut plus changer). Il ne juge pas la qualite, et il ne fige pas le contenu derriere le lien : un depot peut encore evoluer. Pour figer le contenu, on peut donner un lien vers un commit ou un tag precis (ou un CID IPFS).
+
+### Livrable par jalon
+
+`EscrowMilestones.submitMilestone(escrowId, milestoneId, deliverableUri)` : un jalon ne peut etre soumis qu'avec le lien de son livrable (`"Deliverable required"` sinon). Le lien est stocke dans le jalon (`Milestone.deliverableUri`) et emis dans `MilestoneSubmitted`. Dans "Escrow & Milestones", le client voit le lien de chaque jalon soumis ("Review deliverable") et le rouvre depuis la fenetre "Approve & Release" : il verifie jalon par jalon avant de payer.
+
 ## Contrat C : `ReputationToken` (token FLR)
 
 Token ERC-20 de reputation, **non transferable** (soulbound). Le paiement reste en ETH dans l'escrow (B) : FLR ne sert qu'a mesurer l'historique d'un compte.
@@ -106,10 +118,13 @@ Token ERC-20 de reputation, **non transferable** (soulbound). Le paiement reste 
 | Frappe | `claimReward(agreementId)`, appelable par n'importe qui |
 | Conditions | accord `Completed` (A) **et** escrow `Completed` (B), donc freelance paye en totalite ; une seule fois par accord |
 | Montants | freelance : 100 FLR par ETH paye ; client : 20 FLR par ETH paye (`FREELANCER_RATE`, `CLIENT_RATE`) |
+| Condition de deadline | `isDeliveredOnTime(id)` : livre (`deliveredAt` de A) au plus tard a l'echeance. Sinon (en retard, ou accord termine sans livraison), le freelance ne recoit que `LATE_REWARD_PERCENT` = 50 %. Le client, qui a paye en totalite, garde sa part complete. L'evenement `ReputationRewarded` indique `onTime` |
 | Compteur | `missionsCompleted(adresse)` : nombre de missions recompensees |
 | Transferts | `transfer`, `transferFrom` et `approve` revertent (`TransferDisabled`) : la reputation ne s'achete pas |
 
-C lit A et B (`getAgreement`, `escrowOfAgreement`, `getEscrow`) sans jamais les modifier : aucun role de "minter" a gerer. Il est deploye apres B (`scripts/deploy.js`). Cote front, la carte "Reputation" de la page detail d'un accord affiche le solde FLR du portefeuille connecte et le bouton "Claim reputation".
+C lit A et B (`getAgreement`, `escrowOfAgreement`, `getEscrow`) sans jamais les modifier : aucun role de "minter" a gerer. Il est deploye apres B (`scripts/deploy.js`). Cote front, l'onglet **Rewards** (barre laterale des deux espaces) affiche le solde FLR du portefeuille, les accords prets a etre reclames (bouton "Claim") et l'historique des recompenses. Chaque recompense apparait aussi dans **Activity History** ("Reputation Rewarded"). La carte "Reputation" de la page detail d'un accord reste disponible.
+
+Pourquoi faut-il "claim" ? Un smart contract ne s'execute jamais tout seul : il faut qu'une transaction l'appelle. `claimReward` est cette transaction ; n'importe qui peut l'envoyer (client ou freelance), une seule fois par accord, et les deux parties recoivent leurs FLR en meme temps. L'alternative serait de frapper les FLR dans la derniere transaction de l'escrow, ce qui obligerait B a connaitre C et a lui donner un role de "minter".
 
 Limite assumee : un client et un freelance complices peuvent se payer eux-memes pour gonfler leur reputation. Chaque FLR coute pourtant un vrai paiement en ETH et des frais de gas, et le compteur de missions reste visible publiquement.
 

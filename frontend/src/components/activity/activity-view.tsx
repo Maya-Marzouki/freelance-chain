@@ -22,6 +22,7 @@ const FILTERS: { value: ActivityType | "all"; label: string }[] = [
   { value: "AgreementCompleted", label: "Agreement Completed" },
   { value: "AgreementCancelled", label: "Agreement Cancelled" },
   { value: "DisputeRaised", label: "Dispute Raised" },
+  { value: "ReputationRewarded", label: "Reputation Rewarded" },
 ];
 
 const PAGE = 12;

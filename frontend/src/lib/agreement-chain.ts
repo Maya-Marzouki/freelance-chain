@@ -15,6 +15,7 @@ import {
   type AgreementEvent,
   type AgreementStatus,
   type CreateAgreementInput,
+  type Deliverable,
   type DisputeInfo,
   type Party,
 } from "@/types/agreement";
@@ -30,6 +31,8 @@ const STATUS_EVENT: Record<AgreementStatus, ActivityType> = {
   Disputed: "DisputeRaised",
 };
 
+const ZERO_HASH = `0x${"0".repeat(64)}`;
+
 const statusOf = (value: bigint | number): AgreementStatus => AGREEMENT_STATUSES[Number(value)] ?? "Created";
 
 const party = (address: string, name: string): Party => ({ name, address });
@@ -43,7 +46,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   InvalidStatus: "This action is not allowed in the agreement's current status.",
   DeadlineNotPassed: "The deadline has not passed yet.",
   AgreementNotFound: "This agreement does not exist on the connected blockchain.",
-  InvalidParameters: "Invalid parameters: check the freelancer address and the deadline.",
+  InvalidParameters:
+    "Invalid parameters. The freelancer must be a different account from the one signing in MetaMask, and the deadline must be after the blockchain's current date (it moves ahead with npm run time:skip). When delivering, a link is required.",
 };
 
 export function chainErrorMessage(err: unknown, contract?: Contract): string {
@@ -150,6 +154,17 @@ export async function readAgreements(contract: Contract, provider: Provider): Pr
       }),
   );
 
+  // Deliverable (hash + link) of every agreement that reached Delivered.
+  const deliverables = new Map<number, Deliverable>();
+  const deliveredAt = new Map<number, string>();
+  await Promise.all(
+    structs.map(async (a) => {
+      const [d, at] = await Promise.all([contract.deliverables(a.id), contract.deliveredAt(a.id) as Promise<bigint>]);
+      if (d.hash !== ZERO_HASH) deliverables.set(Number(a.id), { hash: d.hash, uri: d.uri });
+      if (at > BigInt(0)) deliveredAt.set(Number(a.id), new Date(Number(at) * 1000).toISOString());
+    }),
+  );
+
   const creationTx = new Map(created.map((l) => [Number((l as unknown as { args: { id: bigint } }).args.id), l.transactionHash]));
 
   return structs
@@ -176,6 +191,8 @@ export async function readAgreements(contract: Contract, provider: Provider): Pr
         documentName: meta?.documentName,
         timeline: events,
         dispute: disputes.get(id),
+        deliverable: deliverables.get(id),
+        deliveredAt: deliveredAt.get(id),
       };
     })
     .sort((a, b) => b.onChainId - a.onChainId);
@@ -208,7 +225,12 @@ export async function createOnChain(
 }
 
 /** Sends the contract transaction matching a lifecycle action. Resolves with its hash. */
-export async function sendAction(contract: Contract, action: AgreementAction, onChainId: number): Promise<string> {
+export async function sendAction(
+  contract: Contract,
+  action: AgreementAction,
+  onChainId: number,
+  deliverable?: Deliverable,
+): Promise<string> {
   let tx;
   switch (action) {
     case "accept":
@@ -218,7 +240,8 @@ export async function sendAction(contract: Contract, action: AgreementAction, on
       tx = await contract.startWork(onChainId);
       break;
     case "deliver":
-      tx = await contract.markDelivered(onChainId);
+      if (!deliverable) throw new Error("Add a link to your deliverable before submitting.");
+      tx = await contract.markDelivered(onChainId, deliverable.hash, deliverable.uri);
       break;
     case "approve":
       tx = await contract.approveDelivery(onChainId);

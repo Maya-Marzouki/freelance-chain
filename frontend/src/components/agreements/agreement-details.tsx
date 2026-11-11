@@ -16,6 +16,7 @@ import { useWallet } from "@/components/wallet/wallet-provider";
 import { daysBetween, formatDate, formatDateTime, formatEth, formatUsd } from "@/lib/utils";
 import type { Agreement, Party, Role } from "@/types/agreement";
 import { AgreementActions } from "./agreement-actions";
+import { DeliverableCard } from "./deliverable-card";
 import { LifecycleStepper } from "./lifecycle-stepper";
 
 function PartyCard({ role, party, isYou }: { role: string; party: Party; isYou: boolean }) {
@@ -122,7 +123,7 @@ function AgreementDetailsContent({
   actualRole: Role;
   milestones: ReturnType<typeof useAppStore>["milestones"];
 }) {
-  const { mode, escrowEnabled, nowMs } = useAppStore();
+  const { mode, escrowEnabled, escrowError, nowMs } = useAppStore();
   const [role, setRole] = useState<Role>(actualRole);
   const now = new Date(nowMs).toISOString();
   const milestones = allMilestones.filter((m) => m.agreementId === agreement.id);
@@ -208,6 +209,8 @@ function AgreementDetailsContent({
         <div className="space-y-6">
           <AgreementActions agreement={agreement} actualRole={actualRole} role={role} onRoleChange={setRole} />
 
+          <DeliverableCard agreement={agreement} role={mode === "chain" ? actualRole : role} />
+
           <Card>
             <CardHeader title="Details" />
             <CardBody>
@@ -270,6 +273,10 @@ function AgreementDetailsContent({
                     ))}
                   </ul>
                 </>
+              ) : escrowError ? (
+                <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800" role="alert">
+                  {escrowError}
+                </p>
               ) : mode === "demo" || !escrowEnabled ? (
                 <p className="flex items-start gap-2 text-sm text-slate-500">
                   <LockKeyhole className="mt-0.5 size-4 shrink-0" aria-hidden />

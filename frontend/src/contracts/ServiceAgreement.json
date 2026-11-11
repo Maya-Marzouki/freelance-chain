@@ -89,6 +89,31 @@
         },
         {
           "indexed": false,
+          "internalType": "bytes32",
+          "name": "deliverableHash",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "uri",
+          "type": "string"
+        }
+      ],
+      "name": "DeliverySubmitted",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "id",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
           "internalType": "bool",
           "name": "favorFreelancer",
           "type": "bool"
@@ -266,6 +291,30 @@
           "type": "uint256"
         }
       ],
+      "name": "deliverables",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "hash",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "string",
+          "name": "uri",
+          "type": "string"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
       "name": "deliveredAt",
       "outputs": [
         {
@@ -383,6 +432,16 @@
           "internalType": "uint256",
           "name": "id",
           "type": "uint256"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "deliverableHash",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "string",
+          "name": "uri",
+          "type": "string"
         }
       ],
       "name": "markDelivered",
