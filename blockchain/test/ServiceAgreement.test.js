@@ -2,6 +2,9 @@ const { expect } = require("chai");
 const { ethers } = require("hardhat");
 const { time } = require("@nomicfoundation/hardhat-toolbox/network-helpers");
 
+const DELIVERABLE_URI = "https://example.com/livrable.zip";
+const DELIVERABLE_HASH = ethers.keccak256(ethers.toUtf8Bytes("contenu du livrable"));
+
 describe("ServiceAgreement", function () {
   let contract, client, freelancer, stranger, deadline;
   const termsHash = ethers.keccak256(ethers.toUtf8Bytes("conditions du contrat"));
@@ -97,26 +100,43 @@ describe("ServiceAgreement", function () {
 
   async function createAcceptStartAndDeliver() {
     await createAcceptAndStart();
-    await contract.connect(freelancer).markDelivered(1);
+    await contract.connect(freelancer).markDelivered(1, DELIVERABLE_HASH, DELIVERABLE_URI);
   }
   describe("markDelivered", function () {
     it("le freelance marque la livraison", async function () {
       await createAcceptAndStart();
-      await expect(contract.connect(freelancer).markDelivered(1))
+      await expect(contract.connect(freelancer).markDelivered(1, DELIVERABLE_HASH, DELIVERABLE_URI))
         .to.emit(contract, "StatusChanged").withArgs(1, 2, 3); // InProgress -> Delivered
       expect((await contract.getAgreement(1)).status).to.equal(3n);
     });
 
     it("refuse un appelant autre que le freelance", async function () {
       await createAcceptAndStart();
-      await expect(contract.connect(client).markDelivered(1))
+      await expect(contract.connect(client).markDelivered(1, DELIVERABLE_HASH, DELIVERABLE_URI))
         .to.be.revertedWithCustomError(contract, "NotFreelancer");
     });
 
     it("refuse si le travail n'a pas demarre", async function () {
       await createAndAccept(); // statut Accepted, pas InProgress
-      await expect(contract.connect(freelancer).markDelivered(1))
+      await expect(contract.connect(freelancer).markDelivered(1, DELIVERABLE_HASH, DELIVERABLE_URI))
         .to.be.revertedWithCustomError(contract, "InvalidStatus");
+    });
+
+    it("enregistre le hash et le lien du livrable", async function () {
+      await createAcceptAndStart();
+      await expect(contract.connect(freelancer).markDelivered(1, DELIVERABLE_HASH, DELIVERABLE_URI))
+        .to.emit(contract, "DeliverySubmitted").withArgs(1, DELIVERABLE_HASH, DELIVERABLE_URI);
+      const d = await contract.deliverables(1);
+      expect(d.hash).to.equal(DELIVERABLE_HASH);
+      expect(d.uri).to.equal(DELIVERABLE_URI);
+    });
+
+    it("refuse un livrable sans hash ou sans lien", async function () {
+      await createAcceptAndStart();
+      await expect(contract.connect(freelancer).markDelivered(1, ethers.ZeroHash, DELIVERABLE_URI))
+        .to.be.revertedWithCustomError(contract, "InvalidParameters");
+      await expect(contract.connect(freelancer).markDelivered(1, DELIVERABLE_HASH, ""))
+        .to.be.revertedWithCustomError(contract, "InvalidParameters");
     });
   });
 
@@ -286,7 +306,7 @@ describe("ServiceAgreement", function () {
       await createAcceptAndStart();
       if (deliverOnTime !== undefined) {
         if (!deliverOnTime) await time.increaseTo(deadline + 1);
-        await contract.connect(freelancer).markDelivered(1);
+        await contract.connect(freelancer).markDelivered(1, DELIVERABLE_HASH, DELIVERABLE_URI);
       }
       await contract.connect(client).raiseDispute(1);
     }
@@ -332,7 +352,7 @@ describe("ServiceAgreement", function () {
       expect((await contract.getDispute((await create(), 1))).openedAt).to.equal(0n);
       await contract.connect(freelancer).acceptAgreement(1);
       await contract.connect(freelancer).startWork(1);
-      await contract.connect(freelancer).markDelivered(1);
+      await contract.connect(freelancer).markDelivered(1, DELIVERABLE_HASH, DELIVERABLE_URI);
       await contract.connect(client).raiseDispute(1);
       const d = await contract.getDispute(1);
       expect(d.raisedBy).to.equal(client.address);
@@ -347,7 +367,7 @@ describe("ServiceAgreement", function () {
     await create();
     await contract.connect(freelancer).acceptAgreement(1);
     await contract.connect(freelancer).startWork(1);
-    await contract.connect(freelancer).markDelivered(1);
+    await contract.connect(freelancer).markDelivered(1, DELIVERABLE_HASH, DELIVERABLE_URI);
     await contract.connect(client).approveDelivery(1);
     expect((await contract.getAgreement(1)).status).to.equal(4n); // Completed
   });

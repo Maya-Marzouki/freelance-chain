@@ -2,6 +2,9 @@ const { expect } = require("chai");
 const { ethers } = require("hardhat");
 const { time } = require("@nomicfoundation/hardhat-toolbox/network-helpers");
 
+const DELIVERABLE_URI = "https://example.com/livrable.zip";
+const DELIVERABLE_HASH = ethers.keccak256(ethers.toUtf8Bytes("contenu du livrable"));
+
 // ReputationToken (C) lit ServiceAgreement (A) et EscrowMilestones (B) : la reputation
 // n'est frappee qu'une fois l'accord Completed et le freelance paye en totalite.
 describe("ReputationToken", function () {
@@ -32,7 +35,7 @@ describe("ReputationToken", function () {
   }
 
   async function deliverAndApprove() {
-    await agreements.connect(freelancer).markDelivered(1);
+    await agreements.connect(freelancer).markDelivered(1, DELIVERABLE_HASH, DELIVERABLE_URI);
     await agreements.connect(client).approveDelivery(1);
   }
 

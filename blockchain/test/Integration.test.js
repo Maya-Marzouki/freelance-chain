@@ -2,6 +2,9 @@ const { expect } = require("chai");
 const { ethers } = require("hardhat");
 const { time } = require("@nomicfoundation/hardhat-toolbox/network-helpers");
 
+const DELIVERABLE_URI = "https://example.com/livrable.zip";
+const DELIVERABLE_HASH = ethers.keccak256(ethers.toUtf8Bytes("contenu du livrable"));
+
 // ServiceAgreement (A) holds the agreement and its status, EscrowMilestones (B) holds the funds.
 // No arbiter: a dispute ends by a party conceding or by the automatic rule of A, and B follows
 // the final status of A (`settle`).
@@ -54,7 +57,7 @@ describe("ServiceAgreement + EscrowMilestones", function () {
     expect(e.status).to.equal(3n); // Completed
     expect(e.releasedAmount).to.equal(total);
 
-    await agreements.connect(freelancer).markDelivered(1);
+    await agreements.connect(freelancer).markDelivered(1, DELIVERABLE_HASH, DELIVERABLE_URI);
     await agreements.connect(client).approveDelivery(1);
     expect((await agreements.getAgreement(1)).status).to.equal(4n); // Completed
     expect(await ethers.provider.getBalance(await escrow.getAddress())).to.equal(0n);
@@ -92,7 +95,7 @@ describe("ServiceAgreement + EscrowMilestones", function () {
 
   it("litige sans cession : la regle automatique donne gain au freelance livre a temps", async function () {
     await fundAndStart();
-    await agreements.connect(freelancer).markDelivered(1);
+    await agreements.connect(freelancer).markDelivered(1, DELIVERABLE_HASH, DELIVERABLE_URI);
     await agreements.connect(client).raiseDispute(1);
 
     await expect(agreements.connect(stranger).resolveDispute(1)).to.be.revertedWithCustomError(agreements, "DisputeWindowOpen");
