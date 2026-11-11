@@ -97,6 +97,22 @@ Fichiers : `lib/profile.ts` (compte), `components/auth/` (session, pages), `comp
 
 Limites assumees : le role et le nom sont stockes dans le navigateur (localStorage, par adresse et par origine) ; ce n'est pas une permission sur la blockchain, ou les donnees restent publiques. Les contrats imposent qui peut faire quoi sur chaque accord. Un compte cree sur `localhost:3000` n'existe pas sur un autre port.
 
+## Contrat C : `ReputationToken` (token FLR)
+
+Token ERC-20 de reputation, **non transferable** (soulbound). Le paiement reste en ETH dans l'escrow (B) : FLR ne sert qu'a mesurer l'historique d'un compte.
+
+| Element | Regle |
+|---|---|
+| Frappe | `claimReward(agreementId)`, appelable par n'importe qui |
+| Conditions | accord `Completed` (A) **et** escrow `Completed` (B), donc freelance paye en totalite ; une seule fois par accord |
+| Montants | freelance : 100 FLR par ETH paye ; client : 20 FLR par ETH paye (`FREELANCER_RATE`, `CLIENT_RATE`) |
+| Compteur | `missionsCompleted(adresse)` : nombre de missions recompensees |
+| Transferts | `transfer`, `transferFrom` et `approve` revertent (`TransferDisabled`) : la reputation ne s'achete pas |
+
+C lit A et B (`getAgreement`, `escrowOfAgreement`, `getEscrow`) sans jamais les modifier : aucun role de "minter" a gerer. Il est deploye apres B (`scripts/deploy.js`). Cote front, la carte "Reputation" de la page detail d'un accord affiche le solde FLR du portefeuille connecte et le bouton "Claim reputation".
+
+Limite assumee : un client et un freelance complices peuvent se payer eux-memes pour gonfler leur reputation. Chaque FLR coute pourtant un vrai paiement en ETH et des frais de gas, et le compteur de missions reste visible publiquement.
+
 ## Reste a faire
 
 - Decider si le contrat gere les fonds (escrow en ETH + `ReentrancyGuard`) ou seulement l'etat de l'accord (voir `BRIEF_BINOME.md` : l'escrow est dans le contrat B).
