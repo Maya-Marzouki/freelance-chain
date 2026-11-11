@@ -34,8 +34,8 @@ import { getEscrowContract, getEscrowReader, isEscrowDeployed } from "@/lib/escr
 import { LATE_REWARD_PERCENT, isReputationDeployed, readRewards, type RewardRecord } from "@/lib/reputation-contract";
 import { ACTIONS, NEXT_MILESTONE_STATUS, actionTarget, type MilestoneAction } from "@/lib/lifecycle";
 import { DEMO_USER, MOCK_AGREEMENTS, MOCK_MILESTONES, MOCK_NOW, buildActivityFeed } from "@/lib/mock-data";
-import { HARDHAT_CHAIN_ID, getServiceAgreementContract, hashTerms, isContractDeployed } from "@/lib/ethereum";
-import { randomHex, sameAddress, sleep } from "@/lib/utils";
+import { HARDHAT_CHAIN_ID, getServiceAgreementContract, getSigner, hashTerms, isContractDeployed } from "@/lib/ethereum";
+import { randomHex, sameAddress, shortenAddress, sleep } from "@/lib/utils";
 import type {
   ActivityItem,
   Agreement,
@@ -308,7 +308,21 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
         if (!sameAddress(input.clientAddress, wallet.address)) {
           throw new Error("The client of an on-chain agreement is the connected wallet. Use your wallet address.");
         }
-        const contract = await getServiceAgreementContract();
+        // The contract takes the signing account as client (`msg.sender`): check the account
+        // MetaMask will really use, which can differ from the one shown if it was switched.
+        const signer = await getSigner();
+        const from = await signer.getAddress();
+        if (!sameAddress(from, input.clientAddress)) {
+          throw new Error(
+            `MetaMask is signing with ${shortenAddress(from, 6)}, not the client ${shortenAddress(input.clientAddress, 6)}. Select the client account in MetaMask, reload the page, then try again.`,
+          );
+        }
+        if (sameAddress(from, input.freelancerAddress)) {
+          throw new Error(
+            "The freelancer address is the account signing in MetaMask. Select the client account in MetaMask, or enter the freelancer's own address.",
+          );
+        }
+        const contract = await getServiceAgreementContract(signer);
         try {
           const { onChainId, termsHash } = await createOnChain(contract, input);
           saveMeta(termsHash, {

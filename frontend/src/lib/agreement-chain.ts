@@ -46,7 +46,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   InvalidStatus: "This action is not allowed in the agreement's current status.",
   DeadlineNotPassed: "The deadline has not passed yet.",
   AgreementNotFound: "This agreement does not exist on the connected blockchain.",
-  InvalidParameters: "Invalid parameters: check the freelancer address and the deadline.",
+  InvalidParameters:
+    "Invalid parameters. The freelancer must be a different account from the one signing in MetaMask, and the deadline must be after the blockchain's current date (it moves ahead with npm run time:skip). When delivering, a link is required.",
 };
 
 export function chainErrorMessage(err: unknown, contract?: Contract): string {
